@@ -342,6 +342,49 @@ function removePlayer(playerId) {
 }
 
 /***********************
+ * TEAMS MODAL
+ ***********************/
+<div id="teamsBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Teams</div>
+      <button id="teamsClose" class="icon-btn" aria-label="Close">✕</button>
+    </div>
+
+    <div class="modal-body">
+      <form id="teamForm" class="form">
+        <input type="hidden" id="teamId" />
+        <div class="form-row">
+          <div class="field">
+            <label>Team Name</label>
+            <input id="teamName" placeholder="e.g., 575 16s National" required />
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn">Save Team</button>
+          <button type="button" id="newTeamBtn" class="btn secondary">New</button>
+          <button type="button" id="exportTeamBtn" class="btn secondary">Export Team</button>
+          <label class="btn secondary" style="cursor:pointer;">
+            Import Team
+            <input id="importTeamInput" type="file" accept="application/json" hidden />
+          </label>
+        </div>
+      </form>
+
+      <div class="roster-list-wrap">
+        <div class="roster-list-title">Your Teams (local to this device)</div>
+        <div id="teamsList" class="roster-list"></div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button id="teamsDone" class="btn secondary">Done</button>
+    </div>
+  </div>
+</div>
+
+/***********************
  * RECORD EVENT
  ***********************/
 function recordEvent(action, playerId) {
@@ -569,4 +612,5 @@ function cryptoId(){
   if (crypto?.randomUUID) return crypto.randomUUID();
   // Fallback
   return "id_" + Math.random().toString(16).slice(2) + Date.now().toString(16);
+
 }
