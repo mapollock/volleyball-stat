@@ -8,9 +8,9 @@ const DEFAULT_MATCHES = ["Match 1", "Match 2", "Match 3"];
 
 // Default roster (editable in app)
 const DEFAULT_PLAYERS = [
-  { id: cryptoId(), name: "Caroline", number: "12", position: "OH" },
-  { id: cryptoId(), name: "Aniya",    number: "7",  position: "S"  },
-  { id: cryptoId(), name: "Maya",     number: "3",  position: "MB" },
+  { id: cryptoId(), name: "Player 1", number: "01", position: "OH" },
+  { id: cryptoId(), name: "Player 2",    number: "02",  position: "S"  },
+  { id: cryptoId(), name: "Player 3",     number: "03",  position: "MB" },
 ];
 
 // Passing rating weights
@@ -569,4 +569,5 @@ function cryptoId(){
   if (crypto?.randomUUID) return crypto.randomUUID();
   // Fallback
   return "id_" + Math.random().toString(16).slice(2) + Date.now().toString(16);
+
 }
