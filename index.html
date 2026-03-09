@@ -56,6 +56,21 @@
   <main class="app-main">
     <section class="controls">
       <div class="control">
+  <label>Team</label>
+  <select id="teamSelect"></select>
+</div>
+
+<div class="control">
+  <label>&nbsp;</label>
+  <div class="control-row">
+    <button id="teamsBtn" class="btn secondary">Teams</button>
+    <button id="exportTeamBtn" class="btn secondary">Export Team</button>
+    <button id="importTeamBtn" class="btn secondary">Import Team</button>
+    <input id="importTeamFile" type="file" accept="application/json" style="display:none;" />
+  </div>
+</div>
+``
+      <div class="control">
         <label>Match</label>
         <select id="matchSelect"></select>
       </div>
@@ -184,3 +199,4 @@
 </body>
 
 </html>
+
