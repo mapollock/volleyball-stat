@@ -465,3 +465,60 @@ input{
 .toolbar .btn-row {
   gap: 10px;
 }
+
+/* ==============================
+   Option A: Volleyball icon stat buttons (Top toolbar only)
+   ============================== */
+
+/* Make ONLY the top toolbar buttons circular + blue */
+.toolbar .btn {
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  background: #2563eb;        /* blue */
+  border-color: #1d4ed8;
+  color: #ffffff;
+
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.25);
+  position: relative; /* supports hidden text span */
+}
+
+/* Hide visible text but keep it accessible for screen readers */
+.toolbar .btn .btn-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Volleyball icon */
+.toolbar .btn::before {
+  content: "🏐";
+  font-size: 20px;
+  line-height: 1;
+}
+
+/* Hover/active states */
+.toolbar .btn:hover {
+  background: #1d4ed8;
+  border-color: #1e40af;
+  transform: translateY(-1px);
+}
+
+.toolbar .btn:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* A little more breathing room between the circles */
+.toolbar .btn-row {
+  gap: 10px;
+}
+
