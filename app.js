@@ -18,7 +18,7 @@ const PASS_WEIGHTS = {
 const HIT_ATTEMPT_ACTIONS = ["swing", "swingOut", "kill", "tip", "tipKill"];
 const HIT_ERROR_ACTIONS = ["swingOut"];
 
-// ---------- Helpers ----------
+/* ------------------ Helpers ------------------ */
 function cryptoId() {
   if (crypto?.randomUUID) return crypto.randomUUID();
   return "id_" + Math.random().toString(16).slice(2) + Date.now().toString(16);
@@ -64,28 +64,18 @@ function newTeam(name = "My Team") {
   };
 }
 
-function safePct(n, d) {
-  if (!d) return 0;
-  return n / d;
-}
+function safePct(n, d) { return d ? (n / d) : 0; }
+function fmtPct(x) { return (x * 100).toFixed(1) + "%"; }
+function fmtNum(x, digits = 2) { return Number.isFinite(x) ? x.toFixed(digits) : (0).toFixed(digits); }
 
-function fmtPct(x) {
-  return (x * 100).toFixed(1) + "%";
-}
-function fmtNum(x, digits = 2) {
-  return Number.isFinite(x) ? x.toFixed(digits) : (0).toFixed(digits);
-}
 function csv(v) {
   const s = String(v ?? "");
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-    return `"${s.replaceAll('"', '""')}"`;
-  }
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replaceAll('"','""')}"`;
   return s;
 }
-function safeFile(name) {
-  return String(name || "team").replace(/[^\w\-]+/g, "_").slice(0, 60);
-}
-function sortPlayers(a, b) {
+function safeFile(name) { return String(name || "team").replace(/[^\w\-]+/g, "_").slice(0, 60); }
+
+function sortPlayers(a,b) {
   const an = parseInt(a.number, 10), bn = parseInt(b.number, 10);
   const aNum = Number.isFinite(an), bNum = Number.isFinite(bn);
   if (aNum && bNum) return an - bn;
@@ -93,7 +83,8 @@ function sortPlayers(a, b) {
   if (!aNum && bNum) return 1;
   return (a.name || "").localeCompare(b.name || "");
 }
-function prettyAction(a) {
+
+function prettyAction(a){
   const map = {
     serveIn:"Serve In", serveOut:"Serve Out", ace:"Ace",
     passToTarget:"Pass: To Target", passNearTarget:"Pass: Near Target",
@@ -103,7 +94,7 @@ function prettyAction(a) {
   return map[a] || a;
 }
 
-// ---------- State ----------
+/* ------------------ State ------------------ */
 let state = loadState();
 normalizeAllTeams(state);
 saveState();
@@ -112,7 +103,7 @@ function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (raw) return JSON.parse(raw);
 
-  // Migration from v003 if present
+  // Migrate from older key if present
   const oldRaw = localStorage.getItem("volleystat_v003");
   if (oldRaw) {
     const old = JSON.parse(oldRaw);
@@ -168,7 +159,7 @@ function normalizeAllTeams(st) {
   }
 }
 
-// ---------- DOM Refs ----------
+/* ------------------ DOM Refs ------------------ */
 const teamSelect = document.getElementById("teamSelect");
 const teamsBtn = document.getElementById("teamsBtn");
 
@@ -213,23 +204,20 @@ const teamIdEl = document.getElementById("teamId");
 const teamNameEl = document.getElementById("teamName");
 const newTeamBtn = document.getElementById("newTeamBtn");
 const exportTeamBtn = document.getElementById("exportTeamBtn");
-
 const importTeamBtn = document.getElementById("importTeamBtn");
 const importTeamInput = document.getElementById("importTeamInput");
 
 let pendingAction = null;
 
-// ---------- INIT ----------
+/* ------------------ Init ------------------ */
 initTeamSelect();
 initMatchSelect();
 renderTable();
 
-// Wire: open file picker
-importTeamBtn.addEventListener("click", () => {
-  importTeamInput.click();
-});
+// Import button opens picker
+importTeamBtn.addEventListener("click", () => importTeamInput.click());
 
-// Top stat buttons
+// Toolbar stat buttons open picker modal
 document.querySelectorAll("button[data-action]").forEach(btn => {
   btn.addEventListener("click", () => {
     pendingAction = btn.dataset.action;
@@ -238,7 +226,7 @@ document.querySelectorAll("button[data-action]").forEach(btn => {
   });
 });
 
-// selector updates
+// selectors update
 [matchSelect, setSelect, viewSelect].forEach(sel => sel.addEventListener("change", renderTable));
 
 // team selection
@@ -249,7 +237,7 @@ teamSelect.addEventListener("change", () => {
   renderTable();
 });
 
-// ---------- Selectors ----------
+/* ------------------ Selectors ------------------ */
 function initTeamSelect() {
   teamSelect.innerHTML = "";
   for (const t of state.teams) {
@@ -273,7 +261,7 @@ function initMatchSelect() {
   matchSelect.value = team.matches[0] || "Match 1";
 }
 
-// ---------- Picker ----------
+/* ------------------ Picker Modal ------------------ */
 function openPicker() {
   buildPlayerGrid();
   pickerBackdrop.classList.remove("hidden");
@@ -296,7 +284,6 @@ function buildPlayerGrid() {
   for (const p of players) {
     const btn = document.createElement("button");
     btn.className = "player-btn";
-
     const top = `${p.number ? "#" + p.number + " " : ""}${p.name}`;
     btn.textContent = top;
 
@@ -310,7 +297,7 @@ function buildPlayerGrid() {
   }
 }
 
-// ---------- Roster ----------
+/* ------------------ Roster Modal ------------------ */
 rosterBtn.addEventListener("click", openRoster);
 
 function openRoster() {
@@ -338,15 +325,11 @@ playerForm.addEventListener("submit", (e) => {
   const name = (playerNameEl.value || "").trim();
   const number = (playerNumberEl.value || "").trim();
   const position = (playerPosEl.value || "").trim();
-
   if (!name) return;
 
   const idx = team.players.findIndex(p => p.id === id);
-  if (idx >= 0) {
-    team.players[idx] = { id, name, number, position };
-  } else {
-    team.players.push({ id, name, number, position });
-  }
+  if (idx >= 0) team.players[idx] = { id, name, number, position };
+  else team.players.push({ id, name, number, position });
 
   normalizeTeam(team);
   saveState();
@@ -374,15 +357,12 @@ function renderRosterList() {
 
     const meta = document.createElement("div");
     meta.className = "meta";
-
     const top = document.createElement("div");
     top.className = "top";
     top.textContent = `${p.number ? "#" + p.number + " " : ""}${p.name}`;
-
     const bottom = document.createElement("div");
     bottom.className = "bottom";
     bottom.textContent = `Pos: ${p.position || "—"}`;
-
     meta.appendChild(top);
     meta.appendChild(bottom);
 
@@ -409,7 +389,6 @@ function renderRosterList() {
 
     actions.appendChild(editBtn);
     actions.appendChild(delBtn);
-
     item.appendChild(meta);
     item.appendChild(actions);
     rosterList.appendChild(item);
@@ -425,9 +404,7 @@ function removePlayer(playerId) {
   if (!ok) return;
 
   team.players = team.players.filter(x => x.id !== playerId);
-  for (const m of team.matches) {
-    for (const s of ["1","2","3"]) delete team.data?.[m]?.[s]?.[playerId];
-  }
+  for (const m of team.matches) for (const s of ["1","2","3"]) delete team.data?.[m]?.[s]?.[playerId];
   team.history = team.history.filter(h => h.playerId !== playerId);
 
   normalizeTeam(team);
@@ -437,7 +414,7 @@ function removePlayer(playerId) {
   renderTable();
 }
 
-// ---------- Teams modal ----------
+/* ------------------ Teams Modal ------------------ */
 teamsBtn.addEventListener("click", openTeams);
 
 function openTeams() {
@@ -451,7 +428,6 @@ function closeTeams() {
   initMatchSelect();
   renderTable();
 }
-
 teamsClose.addEventListener("click", closeTeams);
 teamsDone.addEventListener("click", closeTeams);
 teamsBackdrop.addEventListener("click", (e) => {
@@ -468,9 +444,8 @@ teamForm.addEventListener("submit", (e) => {
   if (!name) return;
 
   const idx = state.teams.findIndex(t => t.id === id);
-  if (idx >= 0) {
-    state.teams[idx].name = name;
-  } else {
+  if (idx >= 0) state.teams[idx].name = name;
+  else {
     const t = newTeam(name);
     t.id = id;
     state.teams.push(t);
@@ -499,15 +474,12 @@ function renderTeamsList() {
 
     const meta = document.createElement("div");
     meta.className = "meta";
-
     const top = document.createElement("div");
     top.className = "top";
     top.textContent = t.name;
-
     const bottom = document.createElement("div");
     bottom.className = "bottom";
     bottom.textContent = `${t.players?.length || 0} players`;
-
     meta.appendChild(top);
     meta.appendChild(bottom);
 
@@ -562,20 +534,18 @@ function deleteTeam(teamId) {
   state.teams = state.teams.filter(x => x.id !== teamId);
   normalizeAllTeams(state);
   saveState();
-
   initTeamSelect();
   initMatchSelect();
   renderTeamsList();
   renderTable();
 }
 
-// Export active team
+// Export active team JSON
 exportTeamBtn.addEventListener("click", () => {
   const team = activeTeam();
   const payload = JSON.stringify(team, null, 2);
   const blob = new Blob([payload], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
-
   const a = document.createElement("a");
   a.href = url;
   a.download = `${safeFile(team.name)}.team.json`;
@@ -605,6 +575,7 @@ importTeamInput.addEventListener("change", async (e) => {
 
     normalizeAllTeams(state);
     saveState();
+
     initTeamSelect();
     initMatchSelect();
     renderTeamsList();
@@ -619,7 +590,7 @@ importTeamInput.addEventListener("change", async (e) => {
   }
 });
 
-// ---------- Record event ----------
+/* ------------------ Record + Derived + Render ------------------ */
 function recordEvent(action, playerId) {
   const team = activeTeam();
   const match = matchSelect.value;
@@ -639,7 +610,6 @@ function recordEvent(action, playerId) {
   renderTable();
 }
 
-// ---------- Derived + render ----------
 function getAggregateCounters(playerId) {
   const team = activeTeam();
   const view = viewSelect.value;
@@ -690,8 +660,8 @@ function derived(playerId) {
 function renderTable() {
   const team = activeTeam();
   statsBody.innerHTML = "";
-
   const players = [...team.players].sort(sortPlayers);
+
   for (const p of players) {
     const d = derived(p.id);
     const tr = document.createElement("tr");
@@ -722,7 +692,7 @@ function td(text, cls="") {
   return el;
 }
 
-// ---------- Controls ----------
+/* ------------------ Controls ------------------ */
 undoBtn.addEventListener("click", () => {
   const team = activeTeam();
   const last = team.history.pop();
