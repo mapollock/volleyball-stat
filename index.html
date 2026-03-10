@@ -211,15 +211,13 @@
             <input id="teamName" placeholder="e.g., 575 16s National" required />
           </div>
         </div>
-
+        <button type="button" id="importTeamBtn" class="btn secondary">Import Team</button>
+          <input id="importTeamInput" type="file" accept="application/json" style="display:none" />
         <div class="form-actions">
           <button type="submit" class="btn">Save Team</button>
           <button type="button" id="newTeamBtn" class="btn secondary">New</button>
           <button type="button" id="exportTeamBtn" class="btn secondary">Export Team</button>
-          <label class="btn secondary" style="cursor:pointer;">
-            Import Team
-            <input id="importTeamInput" type="file" accept="application/json" hidden />
-          </label>
+
         </div>
       </form>
 
@@ -240,5 +238,6 @@
 </body>
 
 </html>
+
 
 
