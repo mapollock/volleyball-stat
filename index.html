@@ -6,11 +6,12 @@
   <title>VolleyStat — Live Tournament Stats</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
+
 <body>
   <header class="app-header">
     <div class="title-wrap">
       <h1>Alan’s Courtside Volleyball Stat App</h1>
-      <div class="version">Version Alpha 0.0.3</div>
+      <div class="version">Version Alpha 0.0.4</div>
     </div>
 
     <div class="toolbar">
@@ -22,7 +23,7 @@
           <button class="btn" data-action="serveOut">Serve Out</button>
           <button class="btn" data-action="ace">Ace</button>
         </div>
-      </div>      
+      </div>
 
       <div class="divider"></div>
 
@@ -56,16 +57,17 @@
   <main class="app-main">
     <section class="controls">
       <div class="control">
-  <label>Team</label>
-  <select id="teamSelect"></select>
-</div>
+        <label>Team</label>
+        <select id="teamSelect"></select>
+      </div>
 
-<div class="control">
-  <label>&nbsp;</label>
-  <div class="control-row">
-    <button id="teamsBtn" class="btn secondary">Teams</button>
-  </div>
-</div>
+      <div class="control">
+        <label>&nbsp;</label>
+        <div class="control-row">
+          <button id="teamsBtn" type="button" class="btn secondary">Teams</button>
+        </div>
+      </div>
+
       <div class="control">
         <label>Match</label>
         <select id="matchSelect"></select>
@@ -92,10 +94,10 @@
       <div class="control grow">
         <label>&nbsp;</label>
         <div class="control-row">
-          <button id="rosterBtn" class="btn secondary">Roster</button>
-          <button id="undoBtn" class="btn secondary">Undo</button>
-          <button id="exportBtn" class="btn secondary">Export CSV</button>
-          <button id="resetBtn" class="btn danger">Reset</button>
+          <button id="rosterBtn" type="button" class="btn secondary">Roster</button>
+          <button id="undoBtn" type="button" class="btn secondary">Undo</button>
+          <button id="exportBtn" type="button" class="btn secondary">Export CSV</button>
+          <button id="resetBtn" type="button" class="btn danger">Reset</button>
         </div>
       </div>
     </section>
@@ -117,6 +119,11 @@
 
             <th>Hit Att</th>
             <th>Hit Avg</th>
+
+            <!-- NEW -->
+            <th>Kills</th>
+            <th>Kills+Tip Kills</th>
+
             <th>Kill%</th>
           </tr>
         </thead>
@@ -135,13 +142,13 @@
     <div class="modal">
       <div class="modal-header">
         <div class="modal-title" id="pickerTitle">Select Player</div>
-        <button id="pickerClose" class="icon-btn" aria-label="Close">✕</button>
+        <button id="pickerClose" type="button" class="icon-btn" aria-label="Close">✕</button>
       </div>
       <div class="modal-body">
         <div id="playerGrid" class="player-grid"></div>
       </div>
       <div class="modal-footer">
-        <button id="pickerCancel" class="btn secondary">Cancel</button>
+        <button id="pickerCancel" type="button" class="btn secondary">Cancel</button>
       </div>
     </div>
   </div>
@@ -151,7 +158,7 @@
     <div class="modal">
       <div class="modal-header">
         <div class="modal-title">Roster</div>
-        <button id="rosterClose" class="icon-btn" aria-label="Close">✕</button>
+        <button id="rosterClose" type="button" class="icon-btn" aria-label="Close">✕</button>
       </div>
 
       <div class="modal-body">
@@ -163,10 +170,12 @@
               <label>Player Name</label>
               <input id="playerName" placeholder="e.g., Caroline Gasset" required />
             </div>
+
             <div class="field small">
               <label>Jersey #</label>
               <input id="playerNumber" placeholder="e.g., 12" inputmode="numeric" />
             </div>
+
             <div class="field small">
               <label>Position</label>
               <input id="playerPos" placeholder="e.g., OH / MB / S / DS" />
@@ -186,58 +195,52 @@
       </div>
 
       <div class="modal-footer">
-        <button id="rosterDone" class="btn secondary">Done</button>
+        <button id="rosterDone" type="button" class="btn secondary">Done</button>
       </div>
     </div>
   </div>
-<!-- Teams Modal -->
-<div id="teamsBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
-  <div class="modal">
-    <div class="modal-header">
-      <div class="modal-title">Teams</div>
-      <button id="teamsClose" class="icon-btn" aria-label="Close">✕</button>
-    </div>
 
-    <div class="modal-body">
-      <form id="teamForm" class="form">
-        <input type="hidden" id="teamId" />
-        <div class="form-row">
-          <div class="field">
-            <label>Team Name</label>
-            <input id="teamName" placeholder="e.g., 575 16s National" required />
+  <!-- Teams Modal -->
+  <div id="teamsBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Teams</div>
+        <button id="teamsClose" type="button" class="icon-btn" aria-label="Close">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <form id="teamForm" class="form">
+          <input type="hidden" id="teamId" />
+
+          <div class="form-row">
+            <div class="field">
+              <label>Team Name</label>
+              <input id="teamName" placeholder="e.g., 575 16s National" required />
+            </div>
           </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn">Save Team</button>
+            <button type="button" id="newTeamBtn" class="btn secondary">New</button>
+            <button type="button" id="exportTeamBtn" class="btn secondary">Export Team</button>
+
+            <button type="button" id="importTeamBtn" class="btn secondary">Import Team</button>
+            <input id="importTeamInput" type="file" accept="application/json" style="display:none" />
+          </div>
+        </form>
+
+        <div class="roster-list-wrap">
+          <div class="roster-list-title">Your Teams (local to this device)</div>
+          <div id="teamsList" class="roster-list"></div>
         </div>
-        <div class="form-actions">
-  <button type="submit" class="btn">Save Team</button>
-  <button type="button" id="newTeamBtn" class="btn secondary">New</button>
-  <button type="button" id="exportTeamBtn" class="btn secondary">Export Team</button>
+      </div>
 
-  <button type="button" id="importTeamBtn" class="btn secondary">Import Team</button>
-  <input id="importTeamInput" type="file" accept="application/json" style="display:none" />
-</div>
-      </form>
-
-      <div class="roster-list-wrap">
-        <div class="roster-list-title">Your Teams (local to this device)</div>
-        <div id="teamsList" class="roster-list"></div>
+      <div class="modal-footer">
+        <button id="teamsDone" type="button" class="btn secondary">Done</button>
       </div>
     </div>
-
-    <div class="modal-footer">
-      <button id="teamsDone" type="button" class="btn secondary">Done</button>
-    </div>
   </div>
-</div>
-  
 
   <script src="app.js"></script>
 </body>
-
 </html>
-
-
-
-
-
-
-
