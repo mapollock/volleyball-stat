@@ -1,5 +1,7 @@
 /***********************
  * VolleyStat v0.0.4 (Local-only Team Profiles)
+ * - Serve Attempts = Ace + Serve In + Serve Out
+ * - Kill% is based on (Kills + Tip Kills) / Hit Attempts
  ***********************/
 const STORAGE_KEY = "volleystat_v004";
 
@@ -103,7 +105,7 @@ function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (raw) return JSON.parse(raw);
 
-  // Migrate from older key if present
+  // Migrate from v003 if present
   const oldRaw = localStorage.getItem("volleystat_v003");
   if (oldRaw) {
     const old = JSON.parse(oldRaw);
@@ -214,7 +216,7 @@ initTeamSelect();
 initMatchSelect();
 renderTable();
 
-// Import button opens picker
+// Import button opens file picker
 importTeamBtn.addEventListener("click", () => importTeamInput.click());
 
 // Toolbar stat buttons open picker modal
@@ -389,6 +391,7 @@ function renderRosterList() {
 
     actions.appendChild(editBtn);
     actions.appendChild(delBtn);
+
     item.appendChild(meta);
     item.appendChild(actions);
     rosterList.appendChild(item);
@@ -634,12 +637,14 @@ function getAggregateCounters(playerId) {
 function derived(playerId) {
   const c = getAggregateCounters(playerId);
 
+  // Serving
   // Serve Attempts = Ace + Serve In + Serve Out
   const serveAtt = c.ace + c.serveIn + c.serveOut;
   const serveMade = c.serveIn + c.ace;
   const servePct = safePct(serveMade, serveAtt);
   const acePct = safePct(c.ace, serveAtt);
 
+  // Passing
   const passAtt = c.passToTarget + c.passNearTarget + c.passAwayTarget + c.passShank;
   const passPts =
     c.passToTarget * PASS_WEIGHTS.passToTarget +
@@ -648,13 +653,27 @@ function derived(playerId) {
     c.passShank * PASS_WEIGHTS.passShank;
   const passAvg = passAtt ? (passPts / passAtt) : 0;
 
+  // Hitting
   const hitAtt = HIT_ATTEMPT_ACTIONS.reduce((sum, key) => sum + (c[key] || 0), 0);
-  const kills = (c.kill || 0) + (c.tipKill || 0);
-  const errs = HIT_ERROR_ACTIONS.reduce((sum, key) => sum + (c[key] || 0), 0);
-  const hitAvg = hitAtt ? ((kills - errs) / hitAtt) : 0;
-  const killPct = safePct(kills, hitAtt);
 
-  return { serveAtt, servePct, acePct, passAtt, passAvg, hitAtt, hitAvg, killPct };
+  // NEW metrics:
+  const killsOnly = (c.kill || 0);
+  const killsPlusTipKills = (c.kill || 0) + (c.tipKill || 0);
+
+  const errs = HIT_ERROR_ACTIONS.reduce((sum, key) => sum + (c[key] || 0), 0);
+
+  // Hit Avg and Kill% based on Kills+Tip Kills
+  const hitAvg = hitAtt ? ((killsPlusTipKills - errs) / hitAtt) : 0;
+  const killPct = safePct(killsPlusTipKills, hitAtt);
+
+  return {
+    serveAtt, servePct, acePct,
+    passAtt, passAvg,
+    hitAtt, hitAvg,
+    killsOnly,
+    killsPlusTipKills,
+    killPct
+  };
 }
 
 function renderTable() {
@@ -679,6 +698,11 @@ function renderTable() {
 
     tr.appendChild(td(String(d.hitAtt)));
     tr.appendChild(td(fmtNum(d.hitAvg, 3)));
+
+    // NEW columns
+    tr.appendChild(td(String(d.killsOnly)));
+    tr.appendChild(td(String(d.killsPlusTipKills)));
+
     tr.appendChild(td(fmtPct(d.killPct)));
 
     statsBody.appendChild(tr);
@@ -707,10 +731,19 @@ undoBtn.addEventListener("click", () => {
 
 exportBtn.addEventListener("click", () => {
   const team = activeTeam();
-  const header = ["Team","Jersey","Player","Pos","ServeAtt","Serve%","Ace%","PassAtt","PassAvg","HitAtt","HitAvg","Kill%"];
-  const rows = [header.join(",")];
 
+  const header = [
+    "Team","Jersey","Player","Pos",
+    "ServeAtt","Serve%","Ace%",
+    "PassAtt","PassAvg",
+    "HitAtt","HitAvg",
+    "Kills","Kills+TipKills",
+    "Kill%"
+  ];
+
+  const rows = [header.join(",")];
   const players = [...team.players].sort((a,b) => (a.name||"").localeCompare(b.name||""));
+
   for (const p of players) {
     const d = derived(p.id);
     rows.push([
@@ -725,6 +758,8 @@ exportBtn.addEventListener("click", () => {
       d.passAvg.toFixed(2),
       d.hitAtt,
       d.hitAvg.toFixed(3),
+      d.killsOnly,
+      d.killsPlusTipKills,
       (d.killPct*100).toFixed(1)
     ].join(","));
   }
