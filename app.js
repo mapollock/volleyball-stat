@@ -181,9 +181,12 @@ const teamNameEl     = document.getElementById("teamName");
 const newTeamBtn     = document.getElementById("newTeamBtn");
 const exportTeamBtn  = document.getElementById("exportTeamBtn");
 const importTeamInput= document.getElementById("importTeamInput");
+const importTeamBtn = document.getElementById("importTeamBtn"
 
 let pendingAction = null;
-
+importTeamBtn.addEventListener("click", () => {
+  importTeamInput.click();   // opens file picker
+});
 /***********************
  * INIT
  ***********************/
