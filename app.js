@@ -6,7 +6,7 @@ const STORAGE_KEY = "volleystat_v004";
 // Default matches
 const DEFAULT_MATCHES = ["Match 1", "Match 2", "Match 3"];
 
-// Passing weights (edit if desired)
+// Passing weights
 const PASS_WEIGHTS = {
   passToTarget: 3,
   passNearTarget: 2,
@@ -18,12 +18,10 @@ const PASS_WEIGHTS = {
 const HIT_ATTEMPT_ACTIONS = ["swing", "swingOut", "kill", "tip", "tipKill"];
 const HIT_ERROR_ACTIONS = ["swingOut"];
 
-// Default roster for a brand new team
-function defaultPlayers() {
-  return [
-    { id: cryptoId(), name: "Player 1", number: "1", position: "OH" },
-    { id: cryptoId(), name: "Player 2", number: "2", position: "MB" },
-  ];
+// ---------- Helpers ----------
+function cryptoId() {
+  if (crypto?.randomUUID) return crypto.randomUUID();
+  return "id_" + Math.random().toString(16).slice(2) + Date.now().toString(16);
 }
 
 function emptyCounters() {
@@ -47,7 +45,14 @@ function buildEmptyData(players, matches) {
   return data;
 }
 
-function newTeam(name = "New Team") {
+function defaultPlayers() {
+  return [
+    { id: cryptoId(), name: "Player 1", number: "1", position: "OH" },
+    { id: cryptoId(), name: "Player 2", number: "2", position: "MB" },
+  ];
+}
+
+function newTeam(name = "My Team") {
   const players = defaultPlayers();
   return {
     id: cryptoId(),
@@ -55,28 +60,62 @@ function newTeam(name = "New Team") {
     matches: [...DEFAULT_MATCHES],
     players,
     data: buildEmptyData(players, DEFAULT_MATCHES),
-    history: [] // undo stack for this team
+    history: []
   };
 }
 
-/***********************
- * STATE
- * state = { activeTeamId, teams: [team...] }
- ***********************/
+function safePct(n, d) {
+  if (!d) return 0;
+  return n / d;
+}
+
+function fmtPct(x) {
+  return (x * 100).toFixed(1) + "%";
+}
+function fmtNum(x, digits = 2) {
+  return Number.isFinite(x) ? x.toFixed(digits) : (0).toFixed(digits);
+}
+function csv(v) {
+  const s = String(v ?? "");
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+    return `"${s.replaceAll('"', '""')}"`;
+  }
+  return s;
+}
+function safeFile(name) {
+  return String(name || "team").replace(/[^\w\-]+/g, "_").slice(0, 60);
+}
+function sortPlayers(a, b) {
+  const an = parseInt(a.number, 10), bn = parseInt(b.number, 10);
+  const aNum = Number.isFinite(an), bNum = Number.isFinite(bn);
+  if (aNum && bNum) return an - bn;
+  if (aNum && !bNum) return -1;
+  if (!aNum && bNum) return 1;
+  return (a.name || "").localeCompare(b.name || "");
+}
+function prettyAction(a) {
+  const map = {
+    serveIn:"Serve In", serveOut:"Serve Out", ace:"Ace",
+    passToTarget:"Pass: To Target", passNearTarget:"Pass: Near Target",
+    passAwayTarget:"Pass: Away", passShank:"Pass: Shank",
+    swing:"Swing", swingOut:"Swing Out", kill:"Kill", tip:"Tip", tipKill:"Tip Kill"
+  };
+  return map[a] || a;
+}
+
+// ---------- State ----------
 let state = loadState();
 normalizeAllTeams(state);
-saveState(); // ensure storage is upgraded
+saveState();
 
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (raw) return JSON.parse(raw);
 
-  // --- MIGRATION: If older versions exist (v0.0.3 key), wrap into a team ---
+  // Migration from v003 if present
   const oldRaw = localStorage.getItem("volleystat_v003");
   if (oldRaw) {
     const old = JSON.parse(oldRaw);
-
-    // Build one team from old single-roster state
     const team = {
       id: cryptoId(),
       name: "My Team",
@@ -85,11 +124,9 @@ function loadState() {
       data: old.data || buildEmptyData(old.players || defaultPlayers(), old.matches || DEFAULT_MATCHES),
       history: old.history || []
     };
-
     return { activeTeamId: team.id, teams: [team] };
   }
 
-  // Fresh install
   const team = newTeam("My Team");
   return { activeTeamId: team.id, teams: [team] };
 }
@@ -108,7 +145,6 @@ function normalizeTeam(team) {
   team.data ||= {};
   team.history ||= [];
 
-  // Ensure data shape exists
   for (const m of team.matches) {
     team.data[m] ||= { "1": {}, "2": {}, "3": {} };
     for (const s of ["1","2","3"]) {
@@ -127,72 +163,71 @@ function normalizeAllTeams(st) {
 
   for (const t of st.teams) normalizeTeam(t);
 
-  // Ensure activeTeamId is valid
   if (!st.teams.some(t => t.id === st.activeTeamId)) {
     st.activeTeamId = st.teams[0].id;
   }
 }
 
-/***********************
- * DOM REFS
- ***********************/
-const teamSelect  = document.getElementById("teamSelect");
-const teamsBtn    = document.getElementById("teamsBtn");
+// ---------- DOM Refs ----------
+const teamSelect = document.getElementById("teamSelect");
+const teamsBtn = document.getElementById("teamsBtn");
 
 const matchSelect = document.getElementById("matchSelect");
-const setSelect   = document.getElementById("setSelect");
-const viewSelect  = document.getElementById("viewSelect");
-const statsBody   = document.getElementById("statsBody");
+const setSelect = document.getElementById("setSelect");
+const viewSelect = document.getElementById("viewSelect");
+const statsBody = document.getElementById("statsBody");
 
-const rosterBtn   = document.getElementById("rosterBtn");
-const undoBtn     = document.getElementById("undoBtn");
-const exportBtn   = document.getElementById("exportBtn");
-const resetBtn    = document.getElementById("resetBtn");
+const rosterBtn = document.getElementById("rosterBtn");
+const undoBtn = document.getElementById("undoBtn");
+const exportBtn = document.getElementById("exportBtn");
+const resetBtn = document.getElementById("resetBtn");
 
 // Picker modal
 const pickerBackdrop = document.getElementById("pickerBackdrop");
-const pickerTitle    = document.getElementById("pickerTitle");
-const playerGrid     = document.getElementById("playerGrid");
-const pickerClose    = document.getElementById("pickerClose");
-const pickerCancel   = document.getElementById("pickerCancel");
+const pickerTitle = document.getElementById("pickerTitle");
+const playerGrid = document.getElementById("playerGrid");
+const pickerClose = document.getElementById("pickerClose");
+const pickerCancel = document.getElementById("pickerCancel");
 
 // Roster modal
 const rosterBackdrop = document.getElementById("rosterBackdrop");
-const rosterClose    = document.getElementById("rosterClose");
-const rosterDone     = document.getElementById("rosterDone");
-const rosterList     = document.getElementById("rosterList");
+const rosterClose = document.getElementById("rosterClose");
+const rosterDone = document.getElementById("rosterDone");
+const rosterList = document.getElementById("rosterList");
 
-const playerForm     = document.getElementById("playerForm");
-const playerIdEl     = document.getElementById("playerId");
-const playerNameEl   = document.getElementById("playerName");
+const playerForm = document.getElementById("playerForm");
+const playerIdEl = document.getElementById("playerId");
+const playerNameEl = document.getElementById("playerName");
 const playerNumberEl = document.getElementById("playerNumber");
-const playerPosEl    = document.getElementById("playerPos");
-const newPlayerBtn   = document.getElementById("newPlayerBtn");
+const playerPosEl = document.getElementById("playerPos");
+const newPlayerBtn = document.getElementById("newPlayerBtn");
 
 // Teams modal
-const teamsBackdrop  = document.getElementById("teamsBackdrop");
-const teamsClose     = document.getElementById("teamsClose");
-const teamsDone      = document.getElementById("teamsDone");
-const teamsList      = document.getElementById("teamsList");
+const teamsBackdrop = document.getElementById("teamsBackdrop");
+const teamsClose = document.getElementById("teamsClose");
+const teamsDone = document.getElementById("teamsDone");
+const teamsList = document.getElementById("teamsList");
 
-const teamForm       = document.getElementById("teamForm");
-const teamIdEl       = document.getElementById("teamId");
-const teamNameEl     = document.getElementById("teamName");
-const newTeamBtn     = document.getElementById("newTeamBtn");
-const exportTeamBtn  = document.getElementById("exportTeamBtn");
-const importTeamInput= document.getElementById("importTeamInput");
-const importTeamBtn = document.getElementById("importTeamBtn"
+const teamForm = document.getElementById("teamForm");
+const teamIdEl = document.getElementById("teamId");
+const teamNameEl = document.getElementById("teamName");
+const newTeamBtn = document.getElementById("newTeamBtn");
+const exportTeamBtn = document.getElementById("exportTeamBtn");
+
+const importTeamBtn = document.getElementById("importTeamBtn");
+const importTeamInput = document.getElementById("importTeamInput");
 
 let pendingAction = null;
-importTeamBtn.addEventListener("click", () => {
-  importTeamInput.click();   // opens file picker
-});
-/***********************
- * INIT
- ***********************/
+
+// ---------- INIT ----------
 initTeamSelect();
 initMatchSelect();
 renderTable();
+
+// Wire: open file picker
+importTeamBtn.addEventListener("click", () => {
+  importTeamInput.click();
+});
 
 // Top stat buttons
 document.querySelectorAll("button[data-action]").forEach(btn => {
@@ -203,10 +238,8 @@ document.querySelectorAll("button[data-action]").forEach(btn => {
   });
 });
 
-// selectors update
-[matchSelect, setSelect, viewSelect].forEach(sel => {
-  sel.addEventListener("change", renderTable);
-});
+// selector updates
+[matchSelect, setSelect, viewSelect].forEach(sel => sel.addEventListener("change", renderTable));
 
 // team selection
 teamSelect.addEventListener("change", () => {
@@ -216,9 +249,7 @@ teamSelect.addEventListener("change", () => {
   renderTable();
 });
 
-/***********************
- * TEAM SELECT + MATCH SELECT
- ***********************/
+// ---------- Selectors ----------
 function initTeamSelect() {
   teamSelect.innerHTML = "";
   for (const t of state.teams) {
@@ -242,9 +273,7 @@ function initMatchSelect() {
   matchSelect.value = team.matches[0] || "Match 1";
 }
 
-/***********************
- * PICKER MODAL
- ***********************/
+// ---------- Picker ----------
 function openPicker() {
   buildPlayerGrid();
   pickerBackdrop.classList.remove("hidden");
@@ -262,7 +291,6 @@ pickerBackdrop.addEventListener("click", (e) => {
 function buildPlayerGrid() {
   const team = activeTeam();
   playerGrid.innerHTML = "";
-
   const players = [...team.players].sort(sortPlayers);
 
   for (const p of players) {
@@ -282,10 +310,8 @@ function buildPlayerGrid() {
   }
 }
 
-/***********************
- * ROSTER MODAL (per active team)
- ***********************/
-rosterBtn.addEventListener("click", () => openRoster());
+// ---------- Roster ----------
+rosterBtn.addEventListener("click", openRoster);
 
 function openRoster() {
   clearRosterForm();
@@ -312,6 +338,7 @@ playerForm.addEventListener("submit", (e) => {
   const name = (playerNameEl.value || "").trim();
   const number = (playerNumberEl.value || "").trim();
   const position = (playerPosEl.value || "").trim();
+
   if (!name) return;
 
   const idx = team.players.findIndex(p => p.id === id);
@@ -319,15 +346,6 @@ playerForm.addEventListener("submit", (e) => {
     team.players[idx] = { id, name, number, position };
   } else {
     team.players.push({ id, name, number, position });
-
-    // Add counters for new player across all match/sets
-    for (const m of team.matches) {
-      team.data[m] ||= { "1": {}, "2": {}, "3": {} };
-      for (const s of ["1","2","3"]) {
-        team.data[m][s] ||= {};
-        team.data[m][s][id] = emptyCounters();
-      }
-    }
   }
 
   normalizeTeam(team);
@@ -348,20 +366,23 @@ function clearRosterForm() {
 function renderRosterList() {
   const team = activeTeam();
   rosterList.innerHTML = "";
-
   const players = [...team.players].sort(sortPlayers);
+
   for (const p of players) {
     const item = document.createElement("div");
     item.className = "roster-item";
 
     const meta = document.createElement("div");
     meta.className = "meta";
+
     const top = document.createElement("div");
     top.className = "top";
     top.textContent = `${p.number ? "#" + p.number + " " : ""}${p.name}`;
+
     const bottom = document.createElement("div");
     bottom.className = "bottom";
     bottom.textContent = `Pos: ${p.position || "—"}`;
+
     meta.appendChild(top);
     meta.appendChild(bottom);
 
@@ -369,6 +390,7 @@ function renderRosterList() {
     actions.className = "actions";
 
     const editBtn = document.createElement("button");
+    editBtn.type = "button";
     editBtn.className = "btn secondary";
     editBtn.textContent = "Edit";
     editBtn.addEventListener("click", () => {
@@ -380,6 +402,7 @@ function renderRosterList() {
     });
 
     const delBtn = document.createElement("button");
+    delBtn.type = "button";
     delBtn.className = "btn danger";
     delBtn.textContent = "Remove";
     delBtn.addEventListener("click", () => removePlayer(p.id));
@@ -402,13 +425,9 @@ function removePlayer(playerId) {
   if (!ok) return;
 
   team.players = team.players.filter(x => x.id !== playerId);
-
   for (const m of team.matches) {
-    for (const s of ["1","2","3"]) {
-      delete team.data[m]?.[s]?.[playerId];
-    }
+    for (const s of ["1","2","3"]) delete team.data?.[m]?.[s]?.[playerId];
   }
-
   team.history = team.history.filter(h => h.playerId !== playerId);
 
   normalizeTeam(team);
@@ -418,9 +437,7 @@ function removePlayer(playerId) {
   renderTable();
 }
 
-/***********************
- * TEAMS MODAL
- ***********************/
+// ---------- Teams modal ----------
 teamsBtn.addEventListener("click", openTeams);
 
 function openTeams() {
@@ -428,7 +445,6 @@ function openTeams() {
   renderTeamsList();
   teamsBackdrop.classList.remove("hidden");
 }
-
 function closeTeams() {
   teamsBackdrop.classList.add("hidden");
   initTeamSelect();
@@ -476,7 +492,6 @@ function clearTeamForm() {
 
 function renderTeamsList() {
   teamsList.innerHTML = "";
-
   const teams = [...state.teams].sort((a,b) => a.name.localeCompare(b.name));
   for (const t of teams) {
     const item = document.createElement("div");
@@ -484,12 +499,15 @@ function renderTeamsList() {
 
     const meta = document.createElement("div");
     meta.className = "meta";
+
     const top = document.createElement("div");
     top.className = "top";
     top.textContent = t.name;
+
     const bottom = document.createElement("div");
     bottom.className = "bottom";
     bottom.textContent = `${t.players?.length || 0} players`;
+
     meta.appendChild(top);
     meta.appendChild(bottom);
 
@@ -497,6 +515,7 @@ function renderTeamsList() {
     actions.className = "actions";
 
     const useBtn = document.createElement("button");
+    useBtn.type = "button";
     useBtn.className = "btn secondary";
     useBtn.textContent = "Use";
     useBtn.addEventListener("click", () => {
@@ -508,6 +527,7 @@ function renderTeamsList() {
     });
 
     const editBtn = document.createElement("button");
+    editBtn.type = "button";
     editBtn.className = "btn secondary";
     editBtn.textContent = "Rename";
     editBtn.addEventListener("click", () => {
@@ -517,6 +537,7 @@ function renderTeamsList() {
     });
 
     const delBtn = document.createElement("button");
+    delBtn.type = "button";
     delBtn.className = "btn danger";
     delBtn.textContent = "Delete";
     delBtn.addEventListener("click", () => deleteTeam(t.id));
@@ -548,7 +569,7 @@ function deleteTeam(teamId) {
   renderTable();
 }
 
-// Export active team JSON
+// Export active team
 exportTeamBtn.addEventListener("click", () => {
   const team = activeTeam();
   const payload = JSON.stringify(team, null, 2);
@@ -559,7 +580,6 @@ exportTeamBtn.addEventListener("click", () => {
   a.href = url;
   a.download = `${safeFile(team.name)}.team.json`;
   a.click();
-
   URL.revokeObjectURL(url);
 });
 
@@ -577,31 +597,29 @@ importTeamInput.addEventListener("change", async (e) => {
       return;
     }
 
-    // Ensure unique ID (avoid collisions)
-    team.id = cryptoId();
-
+    team.id = cryptoId(); // avoid collisions
     normalizeTeam(team);
+
     state.teams.push(team);
     state.activeTeamId = team.id;
 
     normalizeAllTeams(state);
     saveState();
-
     initTeamSelect();
     initMatchSelect();
     renderTeamsList();
     renderTable();
+
     alert(`Imported team: ${team.name}`);
   } catch (err) {
+    console.error(err);
     alert("Import failed. Make sure it’s a .team.json export from this app.");
   } finally {
     importTeamInput.value = "";
   }
 });
 
-/***********************
- * RECORD EVENT (per active team)
- ***********************/
+// ---------- Record event ----------
 function recordEvent(action, playerId) {
   const team = activeTeam();
   const match = matchSelect.value;
@@ -614,7 +632,6 @@ function recordEvent(action, playerId) {
   }
 
   counters[action] += 1;
-
   team.history.push({ match, set, playerId, action, ts: Date.now() });
 
   saveState();
@@ -622,9 +639,7 @@ function recordEvent(action, playerId) {
   renderTable();
 }
 
-/***********************
- * AGGREGATION + DERIVED METRICS
- ***********************/
+// ---------- Derived + render ----------
 function getAggregateCounters(playerId) {
   const team = activeTeam();
   const view = viewSelect.value;
@@ -639,32 +654,18 @@ function getAggregateCounters(playerId) {
     for (const k of Object.keys(agg)) agg[k] += c[k] || 0;
   }
 
-  if (view === "set") {
-    addFrom(match, set);
-  } else if (view === "match") {
-    for (const s of ["1","2","3"]) addFrom(match, s);
-  } else {
-    for (const m of team.matches) {
-      for (const s of ["1","2","3"]) addFrom(m, s);
-    }
-  }
+  if (view === "set") addFrom(match, set);
+  else if (view === "match") ["1","2","3"].forEach(s => addFrom(match, s));
+  else team.matches.forEach(m => ["1","2","3"].forEach(s => addFrom(m, s)));
 
   return agg;
-}
-
-function safePct(n, d) {
-  if (!d) return 0;
-  return n / d;
 }
 
 function derived(playerId) {
   const c = getAggregateCounters(playerId);
 
-  // Per your rule:
   // Serve Attempts = Ace + Serve In + Serve Out
   const serveAtt = c.ace + c.serveIn + c.serveOut;
-
-  // "Successful serves" are Serve In + Ace
   const serveMade = c.serveIn + c.ace;
   const servePct = safePct(serveMade, serveAtt);
   const acePct = safePct(c.ace, serveAtt);
@@ -678,26 +679,19 @@ function derived(playerId) {
   const passAvg = passAtt ? (passPts / passAtt) : 0;
 
   const hitAtt = HIT_ATTEMPT_ACTIONS.reduce((sum, key) => sum + (c[key] || 0), 0);
-  const kills  = (c.kill || 0) + (c.tipKill || 0);
-  const errs   = HIT_ERROR_ACTIONS.reduce((sum, key) => sum + (c[key] || 0), 0);
+  const kills = (c.kill || 0) + (c.tipKill || 0);
+  const errs = HIT_ERROR_ACTIONS.reduce((sum, key) => sum + (c[key] || 0), 0);
   const hitAvg = hitAtt ? ((kills - errs) / hitAtt) : 0;
   const killPct = safePct(kills, hitAtt);
 
   return { serveAtt, servePct, acePct, passAtt, passAvg, hitAtt, hitAvg, killPct };
 }
 
-function fmtPct(x) { return (x * 100).toFixed(1) + "%"; }
-function fmtNum(x, digits=2) { return Number.isFinite(x) ? x.toFixed(digits) : "0.00"; }
-
-/***********************
- * RENDER TABLE (per active team)
- ***********************/
 function renderTable() {
   const team = activeTeam();
   statsBody.innerHTML = "";
 
   const players = [...team.players].sort(sortPlayers);
-
   for (const p of players) {
     const d = derived(p.id);
     const tr = document.createElement("tr");
@@ -728,9 +722,7 @@ function td(text, cls="") {
   return el;
 }
 
-/***********************
- * CONTROLS
- ***********************/
+// ---------- Controls ----------
 undoBtn.addEventListener("click", () => {
   const team = activeTeam();
   const last = team.history.pop();
@@ -767,7 +759,7 @@ exportBtn.addEventListener("click", () => {
     ].join(","));
   }
 
-  const blob = new Blob([rows.join("\n")], {type:"text/csv;charset=utf-8"});
+  const blob = new Blob([rows.join("\n")], { type:"text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -779,52 +771,15 @@ exportBtn.addEventListener("click", () => {
 resetBtn.addEventListener("click", () => {
   const ok = confirm("Reset ALL teams + stats on this device? This cannot be undone.");
   if (!ok) return;
+
   localStorage.removeItem(STORAGE_KEY);
-  // Optionally also remove old key
   localStorage.removeItem("volleystat_v003");
+
   state = loadState();
   normalizeAllTeams(state);
   saveState();
+
   initTeamSelect();
   initMatchSelect();
   renderTable();
 });
-
-/***********************
- * HELPERS
- ***********************/
-function prettyAction(a){
-  const map = {
-    serveIn:"Serve In", serveOut:"Serve Out", ace:"Ace",
-    passToTarget:"Pass: To Target", passNearTarget:"Pass: Near Target",
-    passAwayTarget:"Pass: Away", passShank:"Pass: Shank",
-    swing:"Swing", swingOut:"Swing Out", kill:"Kill", tip:"Tip", tipKill:"Tip Kill"
-  };
-  return map[a] || a;
-}
-
-function csv(v){
-  const s = String(v ?? "");
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-    return `"${s.replaceAll('"','""')}"`;
-  }
-  return s;
-}
-
-function safeFile(name) {
-  return String(name || "team").replace(/[^\w\-]+/g, "_").slice(0, 60);
-}
-
-function sortPlayers(a,b) {
-  const an = parseInt(a.number,10), bn = parseInt(b.number,10);
-  const aNum = Number.isFinite(an), bNum = Number.isFinite(bn);
-  if (aNum && bNum) return an - bn;
-  if (aNum && !bNum) return -1;
-  if (!aNum && bNum) return 1;
-  return (a.name||"").localeCompare(b.name||"");
-}
-
-function cryptoId(){
-  if (crypto?.randomUUID) return crypto.randomUUID();
-  return "id_" + Math.random().toString(16).slice(2) + Date.now().toString(16);
-}
