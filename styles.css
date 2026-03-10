@@ -410,3 +410,58 @@ input{
 .toolbar .btn-row {
   gap: 10px;
 }
+/* ==============================
+   Toolbar stat buttons: round + blue + text inside
+   ============================== */
+
+/* Only affect the stat buttons in the top toolbar */
+.toolbar .btn {
+  width: 64px;               /* circle-ish but wide enough for short labels */
+  height: 44px;
+  padding: 0 10px;
+  border-radius: 9999px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  background: #2563eb;       /* blue */
+  border-color: #1d4ed8;
+  color: #ffffff;
+
+  font-weight: 800;
+  font-size: 11px;           /* shrink text */
+  line-height: 1.05;         /* tighter line height helps fit */
+  letter-spacing: 0.01em;
+
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.25);
+  transform: none;           /* ensure consistent */
+}
+
+/* If any volleyball icon ::before existed from prior changes, disable it */
+.toolbar .btn::before {
+  content: none !important;
+}
+
+/* Keep hover/active feeling */
+.toolbar .btn:hover {
+  background: #1d4ed8;
+  border-color: #1e40af;
+  transform: translateY(-1px);
+}
+
+.toolbar .btn:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* Help longer labels fit (Away from Target, Swing Out, Tip Kill) */
+.toolbar .btn-row .btn {
+  white-space: normal;       /* allow wrap */
+  text-align: center;
+}
+
+/* Optional: slightly tighter gap so circles look consistent */
+.toolbar .btn-row {
+  gap: 10px;
+}
