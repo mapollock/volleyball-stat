@@ -1,9 +1,10 @@
 /***********************
- * VolleyStat v0.0.4 (Local-only Team Profiles)
+ * VolleyStat v0.0.5 (Local-only Team Profiles)
  * - Serve Attempts = Ace + Serve In + Serve Out
- * - Kill% is based on (Kills + Tip Kills) / Hit Attempts
+ * - Kills column = (Kill + Tip Kill)
+ * - Kill% is based on (Kill + Tip Kill) / Hit Attempts
  ***********************/
-const STORAGE_KEY = "volleystat_v004";
+const STORAGE_KEY = "volleystat_v005";
 
 // Default matches
 const DEFAULT_MATCHES = ["Match 1", "Match 2", "Match 3"];
@@ -38,7 +39,7 @@ function buildEmptyData(players, matches) {
   const data = {};
   for (const m of matches) {
     data[m] = { "1": {}, "2": {}, "3": {} };
-    for (const s of ["1","2","3"]) {
+    for (const s of ["1", "2", "3"]) {
       for (const p of players) {
         data[m][s][p.id] = emptyCounters();
       }
@@ -72,12 +73,16 @@ function fmtNum(x, digits = 2) { return Number.isFinite(x) ? x.toFixed(digits) :
 
 function csv(v) {
   const s = String(v ?? "");
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replaceAll('"','""')}"`;
+  if (s.includes(",") || s.includes('"') || s.includes("
+")) return `"${s.replaceAll('"','""')}"`;
   return s;
 }
-function safeFile(name) { return String(name || "team").replace(/[^\w\-]+/g, "_").slice(0, 60); }
 
-function sortPlayers(a,b) {
+function safeFile(name) {
+  return String(name || "team").replace(/[^\w\-]+/g, "_").slice(0, 60);
+}
+
+function sortPlayers(a, b) {
   const an = parseInt(a.number, 10), bn = parseInt(b.number, 10);
   const aNum = Number.isFinite(an), bNum = Number.isFinite(bn);
   if (aNum && bNum) return an - bn;
@@ -86,12 +91,12 @@ function sortPlayers(a,b) {
   return (a.name || "").localeCompare(b.name || "");
 }
 
-function prettyAction(a){
+function prettyAction(a) {
   const map = {
-    serveIn:"Serve In", serveOut:"Serve Out", ace:"Ace",
-    passToTarget:"Pass: To Target", passNearTarget:"Pass: Near Target",
-    passAwayTarget:"Pass: Away", passShank:"Pass: Shank",
-    swing:"Swing", swingOut:"Swing Out", kill:"Kill", tip:"Tip", tipKill:"Tip Kill"
+    serveIn: "Serve In", serveOut: "Serve Out", ace: "Ace",
+    passToTarget: "Pass: To Target", passNearTarget: "Pass: Near Target",
+    passAwayTarget: "Pass: Away", passShank: "Pass: Shank",
+    swing: "Swing", swingOut: "Swing Out", kill: "Kill", tip: "Tip", tipKill: "Tip Kill"
   };
   return map[a] || a;
 }
@@ -268,10 +273,12 @@ function openPicker() {
   buildPlayerGrid();
   pickerBackdrop.classList.remove("hidden");
 }
+
 function closePicker() {
   pickerBackdrop.classList.add("hidden");
   pendingAction = null;
 }
+
 pickerClose.addEventListener("click", closePicker);
 pickerCancel.addEventListener("click", closePicker);
 pickerBackdrop.addEventListener("click", (e) => {
@@ -307,10 +314,12 @@ function openRoster() {
   renderRosterList();
   rosterBackdrop.classList.remove("hidden");
 }
+
 function closeRoster() {
   rosterBackdrop.classList.add("hidden");
   renderTable();
 }
+
 rosterClose.addEventListener("click", closeRoster);
 rosterDone.addEventListener("click", closeRoster);
 rosterBackdrop.addEventListener("click", (e) => {
@@ -407,7 +416,11 @@ function removePlayer(playerId) {
   if (!ok) return;
 
   team.players = team.players.filter(x => x.id !== playerId);
-  for (const m of team.matches) for (const s of ["1","2","3"]) delete team.data?.[m]?.[s]?.[playerId];
+  for (const m of team.matches) {
+    for (const s of ["1","2","3"]) {
+      delete team.data?.[m]?.[s]?.[playerId];
+    }
+  }
   team.history = team.history.filter(h => h.playerId !== playerId);
 
   normalizeTeam(team);
@@ -425,19 +438,23 @@ function openTeams() {
   renderTeamsList();
   teamsBackdrop.classList.remove("hidden");
 }
+
 function closeTeams() {
   teamsBackdrop.classList.add("hidden");
   initTeamSelect();
   initMatchSelect();
   renderTable();
 }
-teamsClose.addEventListener("click", closeTeams);
-teamsDone.addEventListener("click", closeTeams);
-teamsBackdrop.addEventListener("click", (e) => {
-  if (e.target === teamsBackdrop) closeTeams();
-});
 
-newTeamBtn.addEventListener("click", clearTeamForm);
+tEamsWire();
+function tEamsWire() {
+  teamsClose.addEventListener("click", closeTeams);
+  teamsDone.addEventListener("click", closeTeams);
+  teamsBackdrop.addEventListener("click", (e) => {
+    if (e.target === teamsBackdrop) closeTeams();
+  });
+  newTeamBtn.addEventListener("click", clearTeamForm);
+}
 
 teamForm.addEventListener("submit", (e) => {
   e.preventDefault();
@@ -470,7 +487,8 @@ function clearTeamForm() {
 
 function renderTeamsList() {
   teamsList.innerHTML = "";
-  const teams = [...state.teams].sort((a,b) => a.name.localeCompare(b.name));
+  const teams = [...state.teams].sort((a, b) => a.name.localeCompare(b.name));
+
   for (const t of teams) {
     const item = document.createElement("div");
     item.className = "roster-item";
@@ -537,6 +555,7 @@ function deleteTeam(teamId) {
   state.teams = state.teams.filter(x => x.id !== teamId);
   normalizeAllTeams(state);
   saveState();
+
   initTeamSelect();
   initMatchSelect();
   renderTeamsList();
@@ -570,7 +589,7 @@ importTeamInput.addEventListener("change", async (e) => {
       return;
     }
 
-    team.id = cryptoId(); // avoid collisions
+    team.id = cryptoId();
     normalizeTeam(team);
 
     state.teams.push(team);
@@ -638,7 +657,6 @@ function derived(playerId) {
   const c = getAggregateCounters(playerId);
 
   // Serving
-  // Serve Attempts = Ace + Serve In + Serve Out
   const serveAtt = c.ace + c.serveIn + c.serveOut;
   const serveMade = c.serveIn + c.ace;
   const servePct = safePct(serveMade, serveAtt);
@@ -656,23 +674,15 @@ function derived(playerId) {
   // Hitting
   const hitAtt = HIT_ATTEMPT_ACTIONS.reduce((sum, key) => sum + (c[key] || 0), 0);
 
-  // NEW metrics:
-  const killsOnly = (c.kill || 0);
+  // Kills column (Kill + Tip Kill)
+  const kills = (c.kill || 0) + (c.tipKill || 0);
 
   const errs = HIT_ERROR_ACTIONS.reduce((sum, key) => sum + (c[key] || 0), 0);
 
-  // Hit Avg and Kill% based on Kills+Tip Kills
-  const hitAvg = hitAtt ? ((killsPlusTipKills - errs) / hitAtt) : 0;
-  const killPct = safePct(killsPlusTipKills, hitAtt);
+  const hitAvg = hitAtt ? ((kills - errs) / hitAtt) : 0;
+  const killPct = safePct(kills, hitAtt);
 
-  return {
-    serveAtt, servePct, acePct,
-    passAtt, passAvg,
-    hitAtt, hitAvg,
-    killsOnly,
-    killsPlusTipKills,
-    killPct
-  };
+  return { serveAtt, servePct, acePct, passAtt, passAvg, hitAtt, hitAvg, kills, killPct };
 }
 
 function renderTable() {
@@ -698,8 +708,7 @@ function renderTable() {
     tr.appendChild(td(String(d.hitAtt)));
     tr.appendChild(td(fmtNum(d.hitAvg, 3)));
 
-    // NEW columns
-    tr.appendChild(td(String(d.killsOnly)));
+    tr.appendChild(td(String(d.kills)));
 
     tr.appendChild(td(fmtPct(d.killPct)));
 
@@ -707,7 +716,7 @@ function renderTable() {
   }
 }
 
-function td(text, cls="") {
+function td(text, cls = "") {
   const el = document.createElement("td");
   el.textContent = text;
   if (cls) el.className = cls;
@@ -730,17 +739,17 @@ undoBtn.addEventListener("click", () => {
 exportBtn.addEventListener("click", () => {
   const team = activeTeam();
 
+  // CSV export WITHOUT kills column (per request)
   const header = [
     "Team","Jersey","Player","Pos",
     "ServeAtt","Serve%","Ace%",
     "PassAtt","PassAvg",
     "HitAtt","HitAvg",
-    "Kills","Kills+TipKills",
     "Kill%"
   ];
 
   const rows = [header.join(",")];
-  const players = [...team.players].sort((a,b) => (a.name||"").localeCompare(b.name||""));
+  const players = [...team.players].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
   for (const p of players) {
     const d = derived(p.id);
@@ -750,19 +759,18 @@ exportBtn.addEventListener("click", () => {
       csv(p.name),
       csv(p.position || ""),
       d.serveAtt,
-      (d.servePct*100).toFixed(1),
-      (d.acePct*100).toFixed(1),
+      (d.servePct * 100).toFixed(1),
+      (d.acePct * 100).toFixed(1),
       d.passAtt,
       d.passAvg.toFixed(2),
       d.hitAtt,
       d.hitAvg.toFixed(3),
-      d.killsOnly,
-      d.killsPlusTipKills,
-      (d.killPct*100).toFixed(1)
+      (d.killPct * 100).toFixed(1)
     ].join(","));
   }
 
-  const blob = new Blob([rows.join("\n")], { type:"text/csv;charset=utf-8" });
+  const blob = new Blob([rows.join("
+")], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
