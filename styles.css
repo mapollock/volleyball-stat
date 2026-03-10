@@ -522,3 +522,60 @@ input{
   gap: 10px;
 }
 
+/* =======================================================
+   FIX: Top stat buttons show labels inside blue pills
+   (Overrides any prior .btn-text hidden / volleyball styles)
+   ======================================================= */
+
+/* Only the stat buttons in the top toolbar */
+.toolbar .btn {
+  width: 78px;                 /* enough width for “Serve In” / “Shank” */
+  height: 44px;
+  padding: 0 10px;
+  border-radius: 9999px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  background: #2563eb;
+  border: 1px solid #1d4ed8;
+  color: #fff;
+
+  font-weight: 800;
+  font-size: 11px;             /* shrink font */
+  line-height: 1.05;
+  text-align: center;
+
+  white-space: normal;         /* allow wrap for longer labels */
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.25);
+}
+
+/* Remove any volleyball icon from earlier attempts */
+.toolbar .btn::before {
+  content: none !important;
+}
+
+/* IMPORTANT: If labels are wrapped in <span class="btn-text">, show them */
+.toolbar .btn .btn-text {
+  position: static !important;
+  width: auto !important;
+  height: auto !important;
+  overflow: visible !important;
+  clip: auto !important;
+  white-space: normal !important;
+}
+
+/* Hover/active */
+.toolbar .btn:hover {
+  background: #1d4ed8;
+  border-color: #1e40af;
+  transform: translateY(-1px);
+}
+.toolbar .btn:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* Optional: spacing between pills */
+.toolbar .btn-row { gap: 10px; }
