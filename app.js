@@ -658,7 +658,6 @@ function derived(playerId) {
 
   // NEW metrics:
   const killsOnly = (c.kill || 0);
-  const killsPlusTipKills = (c.kill || 0) + (c.tipKill || 0);
 
   const errs = HIT_ERROR_ACTIONS.reduce((sum, key) => sum + (c[key] || 0), 0);
 
@@ -701,7 +700,6 @@ function renderTable() {
 
     // NEW columns
     tr.appendChild(td(String(d.killsOnly)));
-    tr.appendChild(td(String(d.killsPlusTipKills)));
 
     tr.appendChild(td(fmtPct(d.killPct)));
 
