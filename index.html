@@ -66,7 +66,6 @@
     <button id="teamsBtn" class="btn secondary">Teams</button>
   </div>
 </div>
-``
       <div class="control">
         <label>Match</label>
         <select id="matchSelect"></select>
@@ -208,14 +207,15 @@
             <input id="teamName" placeholder="e.g., 575 16s National" required />
           </div>
         </div>
-        <button type="button" id="importTeamBtn" class="btn secondary">Import Team</button>
-          <input id="importTeamInput" type="file" accept="application/json" style="display:none" />
         <div class="form-actions">
-          <button type="submit" class="btn">Save Team</button>
-          <button type="button" id="newTeamBtn" class="btn secondary">New</button>
-          <button type="button" id="exportTeamBtn" class="btn secondary">Export Team</button>
+  <button type="submit" class="btn">Save Team</button>
+  <button type="button" id="newTeamBtn" class="btn secondary">New</button>
+  <button type="button" id="exportTeamBtn" class="btn secondary">Export Team</button>
 
-        </div>
+  <button type="button" id="importTeamBtn" class="btn secondary">Import Team</button>
+  <button id="teamsDone" type="button" class="btn secondary">Done</button>
+  <input id="importTeamInput" type="file" accept="application/json" style="display:none" />
+</div>
       </form>
 
       <div class="roster-list-wrap">
@@ -235,6 +235,7 @@
 </body>
 
 </html>
+
 
 
 
