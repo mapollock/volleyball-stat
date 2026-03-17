@@ -6,7 +6,6 @@
   <title>VolleyStat — Live Tournament Stats</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
-
 <body>
   <header class="app-header">
     <div class="title-wrap">
@@ -33,7 +32,7 @@
         <div class="btn-row">
           <button class="btn" data-action="passToTarget" title="To Target"><span class="btn-text">To Target</span></button>
           <button class="btn" data-action="passNearTarget" title="Near Target"><span class="btn-text">Near Target</span></button>
-          <button class="btn" data-action="passAwayTarget" title="Away from Target"><span class="btn-text">Away from Target</span></button>
+          <button class="btn" data-action="passAwayTarget" title="Away from Target"><span class="btn-text">Away</span></button>
           <button class="btn" data-action="passShank" title="Shank"><span class="btn-text">Shank</span></button>
         </div>
       </div>
@@ -48,7 +47,7 @@
           <button class="btn" data-action="swingOut" title="Swing Out"><span class="btn-text">Swing Out</span></button>
           <button class="btn" data-action="kill" title="Kill"><span class="btn-text">Kill</span></button>
           <button class="btn" data-action="tip" title="Tip"><span class="btn-text">Tip</span></button>
-          <button class="btn" data-action="tipKill" title="T-Kill"><span class="btn-text">T-Kill</span></button>
+          <button class="btn" data-action="tipKill" title="Tip Kill"><span class="btn-text">Tip Kill</span></button>
         </div>
       </div>
     </div>
@@ -96,7 +95,12 @@
         <div class="control-row">
           <button id="rosterBtn" type="button" class="btn secondary">Roster</button>
           <button id="undoBtn" type="button" class="btn secondary">Undo</button>
-          <button id="exportBtn" type="button" class="btn secondary">Export CSV</button>
+
+          <div class="export-wrap">
+            <input id="exportName" class="export-name" placeholder="Export name (optional)" />
+            <button id="exportBtn" type="button" class="btn secondary">Export CSV</button>
+          </div>
+
           <button id="resetBtn" type="button" class="btn danger">Reset</button>
         </div>
       </div>
@@ -109,20 +113,14 @@
             <th class="sticky-col left">#</th>
             <th class="left">Player</th>
             <th class="left">Pos</th>
-
             <th>Serve Att</th>
             <th>Serve%</th>
             <th>Ace%</th>
-
             <th>Pass Att</th>
             <th>Pass Avg</th>
-
             <th>Hit Att</th>
             <th>Hit Avg</th>
-
-            <!-- Single combined kills column (Kill + Tip Kill) -->
             <th>Kills</th>
-
             <th>Kill%</th>
           </tr>
         </thead>
@@ -130,7 +128,7 @@
       </table>
 
       <div class="hint">
-        Click a stat button → pick the player → it records to the current Match/Set.
+        Select a stat button → pick the player → it records to the current Match/Set.
         Use “Roster” to add/edit names, jersey numbers, and positions.
       </div>
     </section>
@@ -159,28 +157,23 @@
         <div class="modal-title">Roster</div>
         <button id="rosterClose" type="button" class="icon-btn" aria-label="Close">✕</button>
       </div>
-
       <div class="modal-body">
         <form id="playerForm" class="form">
           <input type="hidden" id="playerId" />
-
           <div class="form-row">
             <div class="field">
               <label>Player Name</label>
               <input id="playerName" placeholder="e.g., Caroline Gasset" required />
             </div>
-
             <div class="field small">
               <label>Jersey #</label>
               <input id="playerNumber" placeholder="e.g., 12" inputmode="numeric" />
             </div>
-
             <div class="field small">
               <label>Position</label>
               <input id="playerPos" placeholder="e.g., OH / MB / S / DS" />
             </div>
           </div>
-
           <div class="form-actions">
             <button type="submit" class="btn">Save Player</button>
             <button type="button" id="newPlayerBtn" class="btn secondary">New</button>
@@ -192,7 +185,6 @@
           <div id="rosterList" class="roster-list"></div>
         </div>
       </div>
-
       <div class="modal-footer">
         <button id="rosterDone" type="button" class="btn secondary">Done</button>
       </div>
@@ -206,23 +198,19 @@
         <div class="modal-title">Teams</div>
         <button id="teamsClose" type="button" class="icon-btn" aria-label="Close">✕</button>
       </div>
-
       <div class="modal-body">
         <form id="teamForm" class="form">
           <input type="hidden" id="teamId" />
-
           <div class="form-row">
             <div class="field">
               <label>Team Name</label>
               <input id="teamName" placeholder="e.g., 575 16s National" required />
             </div>
           </div>
-
           <div class="form-actions">
             <button type="submit" class="btn">Save Team</button>
             <button type="button" id="newTeamBtn" class="btn secondary">New</button>
             <button type="button" id="exportTeamBtn" class="btn secondary">Export Team</button>
-
             <button type="button" id="importTeamBtn" class="btn secondary">Import Team</button>
             <input id="importTeamInput" type="file" accept="application/json" style="display:none" />
           </div>
@@ -233,9 +221,43 @@
           <div id="teamsList" class="roster-list"></div>
         </div>
       </div>
-
       <div class="modal-footer">
         <button id="teamsDone" type="button" class="btn secondary">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export Confirmation Modal -->
+  <div id="exportConfirmBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="exportConfirmTitle">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="exportConfirmTitle">Confirm Export</div>
+        <button id="exportConfirmClose" type="button" class="icon-btn" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="confirm-grid">
+          <div class="confirm-row">
+            <div class="confirm-label">File</div>
+            <div id="exportConfirmFile" class="confirm-value"></div>
+          </div>
+          <div class="confirm-row">
+            <div class="confirm-label">Team</div>
+            <div id="exportConfirmTeam" class="confirm-value"></div>
+          </div>
+          <div class="confirm-row">
+            <div class="confirm-label">View</div>
+            <div id="exportConfirmView" class="confirm-value"></div>
+          </div>
+          <div class="confirm-row">
+            <div class="confirm-label">Scope</div>
+            <div id="exportConfirmScope" class="confirm-value"></div>
+          </div>
+        </div>
+        <div class="confirm-note">Select “Export” to download, or “Cancel” to abort.</div>
+      </div>
+      <div class="modal-footer">
+        <button id="exportConfirmCancel" type="button" class="btn secondary">Cancel</button>
+        <button id="exportConfirmOk" type="button" class="btn">Export</button>
       </div>
     </div>
   </div>
@@ -243,8 +265,3 @@
   <script src="app.js"></script>
 </body>
 </html>
-
-
-
-
-

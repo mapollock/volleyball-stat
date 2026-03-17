@@ -1,17 +1,16 @@
-/***********************
- * VolleyStat v0.0.5 (Local-only Team Profiles)
+/**
+ * VolleyStat v0.0.5
  * - Serve Attempts = Ace + Serve In + Serve Out
  * - Kills column = (Kill + Tip Kill)
  * - Kill% is based on (Kill + Tip Kill) / Hit Attempts
  * - CSV export excludes the Kills column (per request)
- ***********************/
+ * - Export filename defaults to: <Team>_<Match>_Set_<N> (for Current Set view)
+ * - Custom confirmation modal before exporting CSV
+ */
 
 const STORAGE_KEY = "volleystat_v005";
-
-// Default matches
 const DEFAULT_MATCHES = ["Match 1", "Match 2", "Match 3"];
 
-// Passing weights
 const PASS_WEIGHTS = {
   passToTarget: 3,
   passNearTarget: 2,
@@ -19,7 +18,6 @@ const PASS_WEIGHTS = {
   passShank: 0
 };
 
-// Hitting config
 const HIT_ATTEMPT_ACTIONS = ["swing", "swingOut", "kill", "tip", "tipKill"];
 const HIT_ERROR_ACTIONS = ["swingOut"];
 
@@ -37,38 +35,6 @@ function emptyCounters() {
   };
 }
 
-function buildEmptyData(players, matches) {
-  const data = {};
-  for (const m of matches) {
-    data[m] = { "1": {}, "2": {}, "3": {} };
-    for (const s of ["1", "2", "3"]) {
-      for (const p of players) {
-        data[m][s][p.id] = emptyCounters();
-      }
-    }
-  }
-  return data;
-}
-
-function defaultPlayers() {
-  return [
-    { id: cryptoId(), name: "Player 1", number: "1", position: "OH" },
-    { id: cryptoId(), name: "Player 2", number: "2", position: "MB" },
-  ];
-}
-
-function newTeam(name = "My Team") {
-  const players = defaultPlayers();
-  return {
-    id: cryptoId(),
-    name,
-    matches: [...DEFAULT_MATCHES],
-    players,
-    data: buildEmptyData(players, DEFAULT_MATCHES),
-    history: []
-  };
-}
-
 function safePct(n, d) { return d ? (n / d) : 0; }
 function fmtPct(x) { return (x * 100).toFixed(1) + "%"; }
 function fmtNum(x, digits = 2) { return Number.isFinite(x) ? x.toFixed(digits) : (0).toFixed(digits); }
@@ -76,13 +42,17 @@ function fmtNum(x, digits = 2) { return Number.isFinite(x) ? x.toFixed(digits) :
 function csv(v) {
   const s = String(v ?? "");
   if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-    return `"${s.replaceAll('"','""')}"`;
+    return `"${s.replaceAll('"', '""')}"`;
   }
   return s;
 }
 
 function safeFile(name) {
-  return String(name || "team").replace(/[^\w\-]+/g, "_").slice(0, 60);
+  return String(name || "team")
+    .replace(/[^\w\-]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
 }
 
 function sortPlayers(a, b) {
@@ -104,6 +74,70 @@ function prettyAction(a) {
   return map[a] || a;
 }
 
+function buildEmptyData(players, matches) {
+  const data = {};
+  for (const m of matches) {
+    data[m] = { "1": {}, "2": {}, "3": {} };
+    for (const s of ["1", "2", "3"]) {
+      for (const p of players) {
+        data[m][s][p.id] = emptyCounters();
+      }
+    }
+  }
+  return data;
+}
+
+function defaultPlayers() {
+  return [
+    { id: cryptoId(), name: "Player 1", number: "1", position: "OH" },
+    { id: cryptoId(), name: "Player 2", number: "2", position: "MB" }
+  ];
+}
+
+function newTeam(name = "My Team") {
+  const players = defaultPlayers();
+  const matches = [...DEFAULT_MATCHES];
+  return {
+    id: cryptoId(),
+    name,
+    matches,
+    players,
+    data: buildEmptyData(players, matches),
+    history: []
+  };
+}
+
+/* ------------------ Export name helpers ------------------ */
+function getViewLabel() {
+  const v = viewSelect?.value || "tournament";
+  if (v === "set") return "Current Set";
+  if (v === "match") return "Current Match";
+  return "Tournament Total";
+}
+
+function getExportContextLabel() {
+  const view = viewSelect?.value || "tournament";
+  const match = matchSelect?.value || "Match 1";
+  const set = setSelect?.value || "1";
+
+  if (view === "set") return `${match} Set ${set}`;
+  if (view === "match") return `${match}`;
+  return "Tournament";
+}
+
+function defaultExportBaseName() {
+  const team = activeTeam();
+  const ctx = getExportContextLabel();
+  return `${safeFile(team?.name || "team")}_${safeFile(ctx)}`;
+}
+
+function syncExportNameDefault() {
+  if (!exportName) return;
+  if (!exportName.dataset.userEdited) {
+    exportName.value = defaultExportBaseName();
+  }
+}
+
 /* ------------------ State ------------------ */
 let state = loadState();
 normalizeAllTeams(state);
@@ -111,23 +145,29 @@ saveState();
 
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
-  if (raw) return JSON.parse(raw);
-
-  // Migrate from v003 if present
+  if (raw) {
+    try { return JSON.parse(raw); } catch { /* fallthrough */ }
+  }
+  // Try migrating from v003 if present
   const oldRaw = localStorage.getItem("volleystat_v003");
   if (oldRaw) {
-    const old = JSON.parse(oldRaw);
-    const team = {
-      id: cryptoId(),
-      name: "My Team",
-      matches: old.matches || [...DEFAULT_MATCHES],
-      players: old.players || defaultPlayers(),
-      data: old.data || buildEmptyData(old.players || defaultPlayers(), old.matches || DEFAULT_MATCHES),
-      history: old.history || []
-    };
-    return { activeTeamId: team.id, teams: [team] };
+    try {
+      const old = JSON.parse(oldRaw);
+      const players = Array.isArray(old.players) && old.players.length ? old.players : defaultPlayers();
+      const matches = Array.isArray(old.matches) && old.matches.length ? old.matches : [...DEFAULT_MATCHES];
+      const team = {
+        id: cryptoId(),
+        name: "My Team",
+        matches,
+        players,
+        data: old.data || buildEmptyData(players, matches),
+        history: Array.isArray(old.history) ? old.history : []
+      };
+      return { activeTeamId: team.id, teams: [team] };
+    } catch {
+      // ignore
+    }
   }
-
   const team = newTeam("My Team");
   return { activeTeamId: team.id, teams: [team] };
 }
@@ -140,31 +180,42 @@ function activeTeam() {
   return state.teams.find(t => t.id === state.activeTeamId) || state.teams[0];
 }
 
-function normalizeTeam(team) {
-  team.matches ||= [...DEFAULT_MATCHES];
-  team.players ||= [];
+function ensureCounters(team, match, set, playerId) {
   team.data ||= {};
-  team.history ||= [];
+  team.data[match] ||= { "1": {}, "2": {}, "3": {} };
+  team.data[match][set] ||= {};
+  if (!team.data[match][set][playerId]) team.data[match][set][playerId] = emptyCounters();
+}
 
+function normalizeTeam(team) {
+  team.id ||= cryptoId();
+  team.name ||= "My Team";
+
+  if (!Array.isArray(team.matches) || !team.matches.length) team.matches = [...DEFAULT_MATCHES];
+  if (!Array.isArray(team.players) || !team.players.length) team.players = defaultPlayers();
+  if (!Array.isArray(team.history)) team.history = [];
+
+  team.data ||= {};
   for (const m of team.matches) {
     team.data[m] ||= { "1": {}, "2": {}, "3": {} };
-    for (const s of ["1","2","3"]) {
+    for (const s of ["1", "2", "3"]) {
       team.data[m][s] ||= {};
       for (const p of team.players) {
-        team.data[m][s][p.id] ||= emptyCounters();
+        if (!team.data[m][s][p.id]) team.data[m][s][p.id] = emptyCounters();
       }
     }
   }
 }
 
 function normalizeAllTeams(st) {
-  st.teams ||= [];
-  if (!st.teams.length) st.teams.push(newTeam("My Team"));
-  st.activeTeamId ||= st.teams[0].id;
-
+  st ||= {};
+  if (!Array.isArray(st.teams) || !st.teams.length) {
+    const t = newTeam("My Team");
+    st.teams = [t];
+    st.activeTeamId = t.id;
+  }
   for (const t of st.teams) normalizeTeam(t);
-
-  if (!st.teams.some(t => t.id === st.activeTeamId)) {
+  if (!st.activeTeamId || !st.teams.some(t => t.id === st.activeTeamId)) {
     st.activeTeamId = st.teams[0].id;
   }
 }
@@ -172,16 +223,25 @@ function normalizeAllTeams(st) {
 /* ------------------ DOM Refs ------------------ */
 const teamSelect = document.getElementById("teamSelect");
 const teamsBtn = document.getElementById("teamsBtn");
-
 const matchSelect = document.getElementById("matchSelect");
 const setSelect = document.getElementById("setSelect");
 const viewSelect = document.getElementById("viewSelect");
 const statsBody = document.getElementById("statsBody");
-
 const rosterBtn = document.getElementById("rosterBtn");
 const undoBtn = document.getElementById("undoBtn");
+const exportName = document.getElementById("exportName");
 const exportBtn = document.getElementById("exportBtn");
 const resetBtn = document.getElementById("resetBtn");
+
+// Export confirm modal
+const exportConfirmBackdrop = document.getElementById("exportConfirmBackdrop");
+const exportConfirmClose = document.getElementById("exportConfirmClose");
+const exportConfirmCancel = document.getElementById("exportConfirmCancel");
+const exportConfirmOk = document.getElementById("exportConfirmOk");
+const exportConfirmFile = document.getElementById("exportConfirmFile");
+const exportConfirmTeam = document.getElementById("exportConfirmTeam");
+const exportConfirmView = document.getElementById("exportConfirmView");
+const exportConfirmScope = document.getElementById("exportConfirmScope");
 
 // Picker modal
 const pickerBackdrop = document.getElementById("pickerBackdrop");
@@ -195,7 +255,6 @@ const rosterBackdrop = document.getElementById("rosterBackdrop");
 const rosterClose = document.getElementById("rosterClose");
 const rosterDone = document.getElementById("rosterDone");
 const rosterList = document.getElementById("rosterList");
-
 const playerForm = document.getElementById("playerForm");
 const playerIdEl = document.getElementById("playerId");
 const playerNameEl = document.getElementById("playerName");
@@ -208,7 +267,6 @@ const teamsBackdrop = document.getElementById("teamsBackdrop");
 const teamsClose = document.getElementById("teamsClose");
 const teamsDone = document.getElementById("teamsDone");
 const teamsList = document.getElementById("teamsList");
-
 const teamForm = document.getElementById("teamForm");
 const teamIdEl = document.getElementById("teamId");
 const teamNameEl = document.getElementById("teamName");
@@ -219,25 +277,90 @@ const importTeamInput = document.getElementById("importTeamInput");
 
 let pendingAction = null;
 
-// Guard: if required elements are missing, surface a helpful error.
-(function domSanityCheck(){
+(function domSanityCheck() {
   const required = [
     [teamSelect, "teamSelect"], [teamsBtn, "teamsBtn"], [matchSelect, "matchSelect"], [setSelect, "setSelect"],
-    [viewSelect, "viewSelect"], [statsBody, "statsBody"],
+    [viewSelect, "viewSelect"], [statsBody, "statsBody"], [exportBtn, "exportBtn"],
     [pickerBackdrop, "pickerBackdrop"], [playerGrid, "playerGrid"],
     [rosterBackdrop, "rosterBackdrop"], [teamsBackdrop, "teamsBackdrop"],
-    [importTeamBtn, "importTeamBtn"], [importTeamInput, "importTeamInput"]
+    [importTeamBtn, "importTeamBtn"], [importTeamInput, "importTeamInput"],
+    [exportConfirmBackdrop, "exportConfirmBackdrop"], [exportConfirmOk, "exportConfirmOk"]
   ];
-  const missing = required.filter(([el]) => !el).map(([,id]) => id);
-  if (missing.length) {
-    console.error("VolleyStat: missing required DOM elements:", missing);
-  }
+  const missing = required.filter(([el]) => !el).map(([, id]) => id);
+  if (missing.length) console.error("VolleyStat: missing required DOM elements:", missing);
 })();
+
+/* ------------------ Export Confirm Modal ------------------ */
+let _exportConfirmResolve = null;
+let _exportConfirmLastFocus = null;
+
+function isExportConfirmOpen() {
+  return exportConfirmBackdrop && !exportConfirmBackdrop.classList.contains("hidden");
+}
+
+function openExportConfirmModal({ filename, teamName, viewLabel, scopeLabel }) {
+  return new Promise((resolve) => {
+    if (!exportConfirmBackdrop) return resolve(true); // fallback
+
+    // If one is already open, close it first
+    if (_exportConfirmResolve) {
+      try { _exportConfirmResolve(false); } catch {}
+      _exportConfirmResolve = null;
+    }
+
+    _exportConfirmLastFocus = document.activeElement;
+    _exportConfirmResolve = resolve;
+
+    exportConfirmFile.textContent = filename;
+    exportConfirmTeam.textContent = teamName;
+    exportConfirmView.textContent = viewLabel;
+    exportConfirmScope.textContent = scopeLabel;
+
+    exportConfirmBackdrop.classList.remove("hidden");
+    setTimeout(() => exportConfirmOk?.focus(), 0);
+  });
+}
+
+function closeExportConfirmModal(result) {
+  if (!exportConfirmBackdrop) return;
+  exportConfirmBackdrop.classList.add("hidden");
+
+  const resolver = _exportConfirmResolve;
+  _exportConfirmResolve = null;
+
+  try { _exportConfirmLastFocus?.focus?.(); } catch {}
+  _exportConfirmLastFocus = null;
+
+  if (resolver) resolver(!!result);
+}
 
 /* ------------------ Init ------------------ */
 initTeamSelect();
 initMatchSelect();
 renderTable();
+syncExportNameDefault();
+
+// Export confirm modal wiring
+exportConfirmOk?.addEventListener("click", () => closeExportConfirmModal(true));
+exportConfirmCancel?.addEventListener("click", () => closeExportConfirmModal(false));
+exportConfirmClose?.addEventListener("click", () => closeExportConfirmModal(false));
+exportConfirmBackdrop?.addEventListener("click", (e) => {
+  if (e.target === exportConfirmBackdrop) closeExportConfirmModal(false);
+});
+
+document.addEventListener("keydown", (e) => {
+  if (!isExportConfirmOpen()) return;
+  if (e.key === "Escape") {
+    e.preventDefault();
+    closeExportConfirmModal(false);
+  }
+});
+
+// Track user edits to export name
+exportName?.addEventListener("input", () => {
+  exportName.dataset.userEdited = exportName.value.trim() ? "1" : "";
+  if (!exportName.dataset.userEdited) syncExportNameDefault();
+});
 
 // Import button opens file picker
 importTeamBtn?.addEventListener("click", () => importTeamInput?.click());
@@ -252,7 +375,12 @@ document.querySelectorAll("button[data-action]").forEach(btn => {
 });
 
 // selectors update
-[matchSelect, setSelect, viewSelect].forEach(sel => sel?.addEventListener("change", renderTable));
+[matchSelect, setSelect, viewSelect].forEach(sel =>
+  sel?.addEventListener("change", () => {
+    renderTable();
+    syncExportNameDefault();
+  })
+);
 
 // team selection
 teamSelect?.addEventListener("change", () => {
@@ -260,6 +388,7 @@ teamSelect?.addEventListener("change", () => {
   saveState();
   initMatchSelect();
   renderTable();
+  syncExportNameDefault();
 });
 
 /* ------------------ Selectors ------------------ */
@@ -309,14 +438,13 @@ function buildPlayerGrid() {
   const team = activeTeam();
   playerGrid.innerHTML = "";
   const players = [...team.players].sort(sortPlayers);
-
   for (const p of players) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "player-btn";
 
-    const top = `${p.number ? "#" + p.number + " " : ""}${p.name}`;
-    btn.textContent = top;
+    const topText = `${p.number ? "#" + p.number + " " : ""}${p.name}`;
+    btn.appendChild(document.createTextNode(topText));
 
     const sub = document.createElement("span");
     sub.className = "player-sub";
@@ -340,6 +468,7 @@ function openRoster() {
 function closeRoster() {
   rosterBackdrop.classList.add("hidden");
   renderTable();
+  syncExportNameDefault();
 }
 
 rosterClose?.addEventListener("click", closeRoster);
@@ -360,9 +489,19 @@ playerForm?.addEventListener("submit", (e) => {
   const position = (playerPosEl.value || "").trim();
   if (!name) return;
 
-  const idx = team.players.findIndex(p => p.id === id);
-  if (idx >= 0) team.players[idx] = { id, name, number, position };
-  else team.players.push({ id, name, number, position });
+  const existingIdx = team.players.findIndex(p => p.id === id);
+  const player = { id, name, number, position };
+
+  if (existingIdx >= 0) {
+    team.players[existingIdx] = player;
+  } else {
+    team.players.push(player);
+    for (const m of team.matches) {
+      for (const s of ["1", "2", "3"]) {
+        ensureCounters(team, m, s, id);
+      }
+    }
+  }
 
   normalizeTeam(team);
   saveState();
@@ -437,16 +576,17 @@ function removePlayer(playerId) {
   const team = activeTeam();
   const p = team.players.find(x => x.id === playerId);
   if (!p) return;
-
   const ok = confirm(`Remove ${p.name} from ${team.name}? This also removes their saved stats.`);
   if (!ok) return;
 
   team.players = team.players.filter(x => x.id !== playerId);
+
   for (const m of team.matches) {
-    for (const s of ["1","2","3"]) {
+    for (const s of ["1", "2", "3"]) {
       delete team.data?.[m]?.[s]?.[playerId];
     }
   }
+
   team.history = team.history.filter(h => h.playerId !== playerId);
 
   normalizeTeam(team);
@@ -470,6 +610,7 @@ function closeTeams() {
   initTeamSelect();
   initMatchSelect();
   renderTable();
+  syncExportNameDefault();
 }
 
 teamsClose?.addEventListener("click", closeTeams);
@@ -482,14 +623,14 @@ newTeamBtn?.addEventListener("click", clearTeamForm);
 
 teamForm?.addEventListener("submit", (e) => {
   e.preventDefault();
-
   const id = teamIdEl.value || cryptoId();
   const name = (teamNameEl.value || "").trim();
   if (!name) return;
 
   const idx = state.teams.findIndex(t => t.id === id);
-  if (idx >= 0) state.teams[idx].name = name;
-  else {
+  if (idx >= 0) {
+    state.teams[idx].name = name;
+  } else {
     const t = newTeam(name);
     t.id = id;
     state.teams.push(t);
@@ -512,7 +653,7 @@ function clearTeamForm() {
 
 function renderTeamsList() {
   teamsList.innerHTML = "";
-  const teams = [...state.teams].sort((a, b) => a.name.localeCompare(b.name));
+  const teams = [...state.teams].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
   for (const t of teams) {
     const item = document.createElement("div");
@@ -545,6 +686,7 @@ function renderTeamsList() {
       initTeamSelect();
       initMatchSelect();
       renderTable();
+      syncExportNameDefault();
     });
 
     const editBtn = document.createElement("button");
@@ -576,18 +718,17 @@ function renderTeamsList() {
 function deleteTeam(teamId) {
   const t = state.teams.find(x => x.id === teamId);
   if (!t) return;
-
   const ok = confirm(`Delete team "${t.name}"? This removes roster + stats from this device.`);
   if (!ok) return;
 
   state.teams = state.teams.filter(x => x.id !== teamId);
   normalizeAllTeams(state);
   saveState();
-
   initTeamSelect();
   initMatchSelect();
   renderTeamsList();
   renderTable();
+  syncExportNameDefault();
 }
 
 // Export active team JSON
@@ -596,10 +737,12 @@ exportTeamBtn?.addEventListener("click", () => {
   const payload = JSON.stringify(team, null, 2);
   const blob = new Blob([payload], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
+
   const a = document.createElement("a");
   a.href = url;
   a.download = `${safeFile(team.name)}.team.json`;
   a.click();
+
   URL.revokeObjectURL(url);
 });
 
@@ -612,14 +755,16 @@ importTeamInput?.addEventListener("change", async (e) => {
     const text = await file.text();
     const team = JSON.parse(text);
 
-    if (!team?.name || !team?.players || !team?.matches) {
+    if (!team?.name || !Array.isArray(team?.players) || !Array.isArray(team?.matches)) {
       alert("That file doesn’t look like a valid team export.");
       return;
     }
 
     team.id = cryptoId();
-    normalizeTeam(team);
+    if (!team.data) team.data = buildEmptyData(team.players, team.matches);
+    if (!Array.isArray(team.history)) team.history = [];
 
+    normalizeTeam(team);
     state.teams.push(team);
     state.activeTeamId = team.id;
 
@@ -630,6 +775,7 @@ importTeamInput?.addEventListener("change", async (e) => {
     initMatchSelect();
     renderTeamsList();
     renderTable();
+    syncExportNameDefault();
 
     alert(`Imported team: ${team.name}`);
   } catch (err) {
@@ -646,9 +792,11 @@ function recordEvent(action, playerId) {
   const match = matchSelect.value;
   const set = setSelect.value;
 
-  const counters = team.data?.[match]?.[set]?.[playerId];
-  if (!counters || counters[action] === undefined) {
-    alert("Unknown player/action. Try reopening Teams/Roster.");
+  ensureCounters(team, match, set, playerId);
+  const counters = team.data[match][set][playerId];
+
+  if (counters[action] === undefined) {
+    alert("Unknown action. Try reloading the page.");
     return;
   }
 
@@ -674,9 +822,13 @@ function getAggregateCounters(playerId) {
     for (const k of Object.keys(agg)) agg[k] += c[k] || 0;
   }
 
-  if (view === "set") addFrom(match, set);
-  else if (view === "match") ["1","2","3"].forEach(s => addFrom(match, s));
-  else team.matches.forEach(m => ["1","2","3"].forEach(s => addFrom(m, s)));
+  if (view === "set") {
+    addFrom(match, set);
+  } else if (view === "match") {
+    ["1", "2", "3"].forEach(s => addFrom(match, s));
+  } else {
+    team.matches.forEach(m => ["1", "2", "3"].forEach(s => addFrom(m, s)));
+  }
 
   return agg;
 }
@@ -684,13 +836,11 @@ function getAggregateCounters(playerId) {
 function derived(playerId) {
   const c = getAggregateCounters(playerId);
 
-  // Serving
   const serveAtt = c.ace + c.serveIn + c.serveOut;
   const serveMade = c.serveIn + c.ace;
   const servePct = safePct(serveMade, serveAtt);
   const acePct = safePct(c.ace, serveAtt);
 
-  // Passing
   const passAtt = c.passToTarget + c.passNearTarget + c.passAwayTarget + c.passShank;
   const passPts =
     c.passToTarget * PASS_WEIGHTS.passToTarget +
@@ -699,14 +849,9 @@ function derived(playerId) {
     c.passShank * PASS_WEIGHTS.passShank;
   const passAvg = passAtt ? (passPts / passAtt) : 0;
 
-  // Hitting
   const hitAtt = HIT_ATTEMPT_ACTIONS.reduce((sum, key) => sum + (c[key] || 0), 0);
-
-  // Kills column (Kill + Tip Kill)
   const kills = (c.kill || 0) + (c.tipKill || 0);
-
   const errs = HIT_ERROR_ACTIONS.reduce((sum, key) => sum + (c[key] || 0), 0);
-
   const hitAvg = hitAtt ? ((kills - errs) / hitAtt) : 0;
   const killPct = safePct(kills, hitAtt);
 
@@ -716,8 +861,8 @@ function derived(playerId) {
 function renderTable() {
   const team = activeTeam();
   statsBody.innerHTML = "";
-  const players = [...team.players].sort(sortPlayers);
 
+  const players = [...team.players].sort(sortPlayers);
   for (const p of players) {
     const d = derived(p.id);
     const tr = document.createElement("tr");
@@ -763,15 +908,14 @@ undoBtn?.addEventListener("click", () => {
   renderTable();
 });
 
-exportBtn?.addEventListener("click", () => {
+exportBtn?.addEventListener("click", async () => {
   const team = activeTeam();
 
-  // CSV export WITHOUT kills column (per request)
   const header = [
-    "Team","Jersey","Player","Pos",
-    "ServeAtt","Serve%","Ace%",
-    "PassAtt","PassAvg",
-    "HitAtt","HitAvg",
+    "Team", "Jersey", "Player", "Pos",
+    "ServeAtt", "Serve%", "Ace%",
+    "PassAtt", "PassAvg",
+    "HitAtt", "HitAvg",
     "Kill%"
   ];
 
@@ -796,12 +940,27 @@ exportBtn?.addEventListener("click", () => {
     ].join(","));
   }
 
+  const base = safeFile((exportName?.value || "").trim() || defaultExportBaseName());
+  const filename = `${base}.csv`;
+
+  const scope = getExportContextLabel();
+  const viewLbl = getViewLabel();
+  const ok = await openExportConfirmModal({
+    filename,
+    teamName: team.name,
+    viewLabel: viewLbl,
+    scopeLabel: scope
+  });
+  if (!ok) return;
+
   const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
+
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${safeFile(team.name)}_${viewSelect.value}.csv`;
+  a.download = filename;
   a.click();
+
   URL.revokeObjectURL(url);
 });
 
@@ -819,4 +978,6 @@ resetBtn?.addEventListener("click", () => {
   initTeamSelect();
   initMatchSelect();
   renderTable();
+  if (exportName) exportName.dataset.userEdited = "";
+  syncExportNameDefault();
 });
