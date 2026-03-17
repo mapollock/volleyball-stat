@@ -306,3 +306,7 @@ input{
   background: var(--blue2);
   border-color: var(--blue3);
 }
+.btn.danger{
+  background-color: #dc2626;
+  color: white;
+}
