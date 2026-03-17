@@ -132,8 +132,14 @@ function normalizeTeam(team) {
     for (const s of ["1","2","3"]) {
       team.data[m][s] ||= {};
       for (const p of team.players) {
-        const existing = team.data[m][s][p.id] || {};
-        team.data[m][s][p.id] = { ...emptyCounters(), ...existing };
+      const existing = team.data[m][s][p.id] || {};
+      const merged = { ...emptyCounters(), ...existing };
+
+// ✅ Hard guarantee for newly-added stats
+merged.serveOut ??= 0;
+
+migrateServingCounters(merged);
+team.data[m][s][p.id] = merged;
       }
     }
   }
