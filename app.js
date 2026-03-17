@@ -1,83 +1,127 @@
-// VolleyStat – functional rebuild
-const STORAGE_KEY = 'volleystat_v1';
+// VolleyStat – clean functional core
+const STORAGE_KEY = 'volleystat_core';
 
-const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{"teams":[],"activeTeamId":null}');
+const state = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {
+  teams: [],
+  activeTeamId: null
+};
 
-const el = id => document.getElementById(id);
+const $ = id => document.getElementById(id);
 
-function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
 
-function uid(){ return crypto.randomUUID(); }
+function uid() {
+  return crypto.randomUUID();
+}
 
-function activeTeam(){ return state.teams.find(t=>t.id===state.activeTeamId); }
+function activeTeam() {
+  return state.teams.find(t => t.id === state.activeTeamId);
+}
 
-function init(){
-  if(!state.teams.length){ createTeam('Default Team'); }
-  if(!state.activeTeamId){ state.activeTeamId = state.teams[0].id; }
-  save();
-  initTeamSelect();
-  initMatchSelect();
+/* ---------- INIT ---------- */
+function init() {
+  if (!state.teams.length) {
+    createTeam('Default Team');
+  }
+  if (!state.activeTeamId) {
+    state.activeTeamId = state.teams[0].id;
+  }
+  renderTeams();
   renderTable();
+  save();
 }
 
-function createTeam(name){
-  const t = { id: uid(), name, matches:['Match 1'], players:[], data:{}, history:[] };
-  state.teams.push(t);
-  state.activeTeamId = t.id;
+/* ---------- TEAMS ---------- */
+function createTeam(name) {
+  const team = {
+    id: uid(),
+    name,
+    players: []
+  };
+  state.teams.push(team);
+  state.activeTeamId = team.id;
 }
 
-function initTeamSelect(){
-  const sel = el('teamSelect'); sel.innerHTML='';
-  state.teams.forEach(t=>{
-    const o=document.createElement('option'); o.value=t.id; o.textContent=t.name; sel.appendChild(o);
+function renderTeams() {
+  const sel = $('teamSelect');
+  sel.innerHTML = '';
+  state.teams.forEach(t => {
+    const o = document.createElement('option');
+    o.value = t.id;
+    o.textContent = t.name;
+    sel.appendChild(o);
   });
   sel.value = state.activeTeamId;
 }
 
-function initMatchSelect(){
-  const sel = el('matchSelect'); sel.innerHTML='';
-  const t = activeTeam();
-  t.matches.forEach(m=>{ const o=document.createElement('option'); o.value=m; o.textContent=m; sel.appendChild(o); });
+/* ---------- PLAYERS ---------- */
+function addPlayer() {
+  const name = $('playerName').value.trim();
+  if (!name) return alert('Player name required');
+
+  activeTeam().players.push({
+    id: uid(),
+    name,
+    number: $('playerNumber').value,
+    pos: $('playerPos').value
+  });
+
+  $('playerName').value = '';
+  $('playerNumber').value = '';
+  $('playerPos').value = '';
+
+  renderTable();
+  save();
 }
 
-function renderTable(){
-  const body = el('statsBody'); body.innerHTML='';
-  const t = activeTeam();
-  t.players.forEach(p=>{
-    const tr=document.createElement('tr');
-    tr.innerHTML = `<td>${p.number||''}</td><td>${p.name}</td><td>${p.pos||''}</td>` + '<td>0</td>'.repeat(11);
+function renderTable() {
+  const body = $('statsBody');
+  body.innerHTML = '';
+  activeTeam().players.forEach(p => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${p.number || ''}</td><td>${p.name}</td><td>${p.pos || ''}</td>`;
     body.appendChild(tr);
   });
 }
 
-// Teams modal
-el('teamsBtn').onclick=()=>el('teamsBackdrop').classList.remove('hidden');
-el('teamsDone').onclick=()=>el('teamsBackdrop').classList.add('hidden');
-el('teamForm').onsubmit=e=>{
-  e.preventDefault();
-  createTeam(el('teamName').value);
-  el('teamName').value='';
-  initTeamSelect(); save();
+/* ---------- EXPORT ---------- */
+function exportCSV() {
+  const rows = ['Number,Name,Pos'];
+  activeTeam().players.forEach(p =>
+    rows.push(`${p.number},${p.name},${p.pos}`)
+  );
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'volley_stat.csv';
+  a.click();
+}
+
+/* ---------- EVENTS ---------- */
+$('addTeamBtn').onclick = () => {
+  const name = prompt('Team name');
+  if (!name) return;
+  createTeam(name);
+  renderTeams();
+  renderTable();
+  save();
 };
 
-// Roster modal
-el('rosterBtn').onclick=()=>el('rosterBackdrop').classList.remove('hidden');
-el('rosterDone').onclick=()=>el('rosterBackdrop').classList.add('hidden');
-el('playerForm').onsubmit=e=>{
-  e.preventDefault();
-  const t=activeTeam();
-  t.players.push({ id:uid(), name:el('playerName').value, number:el('playerNumber').value, pos:el('playerPos').value });
-  el('playerName').value=''; el('playerNumber').value=''; el('playerPos').value='';
-  save(); renderTable();
+$('teamSelect').onchange = e => {
+  state.activeTeamId = e.target.value;
+  renderTable();
+  save();
 };
 
-// Export
-el('exportBtn').onclick=()=>{
-  const rows=['Player,Number,Position'];
-  activeTeam().players.forEach(p=>rows.push(`${p.name},${p.number},${p.pos}`));
-  const blob=new Blob([rows.join('
-')],{type:'text/csv'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='volley.csv'; a.click();
+$('addPlayerBtn').onclick = addPlayer;
+$('exportBtn').onclick = exportCSV;
+$('resetBtn').onclick = () => {
+  if (confirm('Reset all data?')) {
+    localStorage.removeItem(STORAGE_KEY);
+    location.reload();
+  }
 };
 
 init();
