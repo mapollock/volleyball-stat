@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VolleyStat — Live Tournament Stats</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="app-header">
+  <div class="title-wrap">
+    <h1>LIVE Courtside Volleyball Stat App</h1>
+    <div class="version">Alpha</div>
+  </div>
+
+  <div class="toolbar">
+    <div class="group">
+      <div class="group-title">SERVING (OPPONENT PASS RESULT)</div>
+      <div class="btn-row">
+        <button class="btn" data-action="serve1">1</button>
+        <button class="btn" data-action="serve2">2</button>
+        <button class="btn" data-action="serve3">3</button>
+        <button class="btn" data-action="ace">ACE</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="app-main">
+  <section class="controls">
+    <div class="control"><label>Team</label><select id="teamSelect"></select></div>
+    <div class="control"><label>Match</label><select id="matchSelect"></select></div>
+    <div class="control"><label>Set</label>
+      <select id="setSelect">
+        <option value="1">Set 1</option>
+        <option value="2">Set 2</option>
+        <option value="3">Set 3</option>
+      </select>
+    </div>
+    <div class="control"><label>View</label>
+      <select id="viewSelect">
+        <option value="set">Current Set</option>
+        <option value="match">Current Match</option>
+        <option value="tournament" selected>Tournament</option>
+      </select>
+    </div>
+
+    <div class="control grow">
+      <button id="teamsBtn" class="btn secondary">Teams</button>
+      <button id="rosterBtn" class="btn secondary">Roster</button>
+      <button id="undoBtn" class="btn secondary">Undo</button>
+      <button id="exportBtn" class="btn secondary">Export CSV</button>
+      <button id="resetBtn" class="btn danger">Reset</button>
+    </div>
+  </section>
+
+  <section class="table-wrap">
+    <table id="statsTable">
+      <thead>
+        <tr>
+          <th>#</th><th>Player</th><th>Pos</th>
+          <th>Serve Att</th><th>Serve Avg</th>
+          <th>Pressure%</th><th>ACE</th><th>Ace%</th>
+          <th>Pass Att</th><th>Pass Avg</th>
+          <th>Hit Att</th><th>Hit Avg</th>
+          <th>Kills</th><th>Kill%</th>
+        </tr>
+      </thead>
+      <tbody id="statsBody"></tbody>
+    </table>
+  </section>
+</main>
+
+<!-- Teams Modal -->
+<div id="teamsBackdrop" class="modal-backdrop hidden">
+  <div class="modal">
+    <h2>Teams</h2>
+    <form id="teamForm">
+      <input type="hidden" id="teamId" />
+      <input id="teamName" placeholder="Team name" required />
+      <button type="submit">Save Team</button>
+      <button type="button" id="newTeamBtn">New</button>
+    </form>
+    <div id="teamsList"></div>
+    <button id="teamsDone">Done</button>
+  </div>
+</div>
+
+<!-- Roster Modal -->
+<div id="rosterBackdrop" class="modal-backdrop hidden">
+  <div class="modal">
+    <h2>Roster</h2>
+    <form id="playerForm">
+      <input type="hidden" id="playerId" />
+      <input id="playerName" placeholder="Player name" required />
+      <input id="playerNumber" placeholder="#" />
+      <input id="playerPos" placeholder="Pos" />
+      <button type="submit">Save Player</button>
+      <button type="button" id="newPlayerBtn">New</button>
+    </form>
+    <div id="rosterList"></div>
+    <button id="rosterDone">Done</button>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
