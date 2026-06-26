@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>VolleyStat Report v2</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#f0f2f5;color:#111827;font-size:13px;}
+
+    .screen-bar{background:#1e3a8a;color:#fff;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;position:sticky;top:0;z-index:100;}
+    .screen-bar h1{font-size:15px;font-weight:900;}
+    .bar-actions{display:flex;gap:8px;}
+    .btn-print{background:#fff;color:#1e3a8a;border:none;border-radius:8px;padding:8px 16px;font-weight:800;font-size:13px;cursor:pointer;}
+    .btn-back{background:transparent;color:rgba(255,255,255,.7);border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:8px 14px;font-weight:700;font-size:12px;cursor:pointer;}
+
+    .filter-bar{background:#fff;border-bottom:1px solid #e5e7eb;padding:10px 16px;display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;}
+    .filter-group{display:flex;flex-direction:column;gap:3px;}
+    .filter-group label{font-size:10px;font-weight:800;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;}
+    .filter-group select{border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;font-weight:700;font-size:12px;background:#fff;}
+
+    .report-wrap{max-width:1100px;margin:0 auto;padding:16px;}
+
+    .report-header{background:#1e3a8a;color:#fff;border-radius:12px 12px 0 0;padding:16px 20px;}
+    .report-header h2{font-size:18px;font-weight:900;margin-bottom:2px;}
+    .report-header .meta{font-size:11px;color:rgba(255,255,255,.6);margin-top:4px;}
+
+    .section{background:#fff;border:1px solid #e5e7eb;border-top:none;padding:14px 20px;margin-bottom:2px;}
+    .section:last-child{border-radius:0 0 12px 12px;margin-bottom:24px;}
+    .section-title{font-size:11px;font-weight:900;color:#1e3a8a;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;padding-bottom:5px;border-bottom:2px solid #dbeafe;}
+
+    .tbl-wrap{overflow-x:auto;}
+    table{width:100%;border-collapse:collapse;font-size:12px;}
+    thead th{background:#1e3a8a;color:#fff;padding:7px 10px;text-align:right;white-space:nowrap;font-weight:700;font-size:11px;}
+    thead th.left{text-align:left;}
+    thead th.group-sep{border-left:2px solid rgba(255,255,255,.3);}
+    tbody td{border-bottom:1px solid #f3f4f6;padding:7px 10px;text-align:right;white-space:nowrap;font-size:12px;}
+    tbody td.left{text-align:left;font-weight:700;}
+    tbody td.group-sep{border-left:2px solid #e5e7eb;}
+    tbody tr:hover{background:#fafafa;}
+    tbody tr.total-row td{background:#eff6ff;font-weight:900;border-top:2px solid #bfdbfe;}
+    tbody tr.total-row td.left{color:#1e3a8a;}
+    .good{color:#16a34a;font-weight:800;}
+    .warn{color:#d97706;font-weight:800;}
+    .bad{color:#dc2626;font-weight:800;}
+    .zero{color:#9ca3af;}
+    .empty{text-align:center;color:#9ca3af;padding:20px;font-style:italic;font-size:12px;}
+
+    /* Player report */
+    .player-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;margin-bottom:20px;overflow:hidden;break-inside:avoid;}
+    .player-card-header{background:#1e3a8a;color:#fff;padding:12px 18px;display:flex;align-items:center;gap:14px;}
+    .player-num{font-size:26px;font-weight:900;min-width:42px;text-align:center;}
+    .player-info h3{font-size:15px;font-weight:900;}
+    .player-info .pos{font-size:11px;color:rgba(255,255,255,.6);margin-top:2px;}
+    .player-card-body{padding:12px 18px;}
+    .subsection-title{font-size:11px;font-weight:900;color:#1e3a8a;text-transform:uppercase;letter-spacing:.07em;margin:12px 0 6px;padding-bottom:4px;border-bottom:1px solid #dbeafe;}
+
+    @media print {
+      .screen-bar,.filter-bar{display:none!important;}
+      body{background:#fff;}
+      .report-wrap{max-width:100%;padding:0;margin:0;}
+      .report-header{border-radius:0;}
+      .player-card{break-inside:avoid;}
+      @page{margin:1.5cm;}
+    }
+  </style>
+</head>
+<body>
+
+<div class="screen-bar" data-v="2">
+  <h1>&#x1F4CA; VolleyStat Report</h1>
+  <div class="bar-actions">
+    <button class="btn-back" onclick="window.close()">&#8592; Back</button>
+    <button class="btn-print" onclick="window.print()">&#x1F5A8; Print / Save PDF</button>
+  </div>
+</div>
+
+<div class="filter-bar">
+  <div class="filter-group">
+    <label>Report Type</label>
+    <select id="reportType" onchange="render()">
+      <option value="team">Team Summary</option>
+      <option value="player">Individual Player</option>
+    </select>
+  </div>
+  <div class="filter-group">
+    <label>Day</label>
+    <select id="dayFilter" onchange="render()"><option value="all">All Days</option></select>
+  </div>
+  <div class="filter-group">
+    <label>Match</label>
+    <select id="matchFilter" onchange="render()"><option value="all">All Matches</option></select>
+  </div>
+  <div class="filter-group" id="playerFilterGroup" style="display:none;">
+    <label>Player</label>
+    <select id="playerFilter" onchange="render()"></select>
+  </div>
+</div>
+
+<div class="report-wrap" id="reportWrap"><div class="empty">Loading report data…</div></div>
+
+<script>
+// ── Load data ──────────────────────────────────────────────────────────────
+var D = null;
+try { D = JSON.parse(localStorage.getItem('volleystat_report_data')||'null'); } catch(e){}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function nz(v){ return (!v||isNaN(v))?0:+v; }
+function getTeam(){ if(!D||!D.teams||!D.teams.length) return null; return D.teams.find(function(t){ return t.id===D.activeTeamId; })||D.teams[0]; }
+function getDays(){
+  var base = ['Day 1','Day 2','Day 3'];
+  if(D&&D.extraDays) base = base.concat(D.extraDays);
+  return base.filter(function(d,i,a){ return a.indexOf(d)===i; });
+}
+function getSelDays(){ var v=document.getElementById('dayFilter').value; return v==='all'?getDays():[v]; }
+function getSelMatches(){
+  var v=document.getElementById('matchFilter').value;
+  var t=getTeam(); var all=t?(t.matches||['Match 1','Match 2','Match 3']):['Match 1'];
+  return v==='all'?all:[v];
+}
+var SETS=['1','2','3'];
+
+function counters(team,day,match,set,pid){
+  return (((team.data||{})[day+' - '+match]||{})[set]||{})[pid]||{};
+}
+
+function sumP(team,pid,days,matches,sets){
+  var r={serve1:0,serve2:0,serve3:0,ace:0,serveOut:0,
+         passToTarget:0,passNearTarget:0,passAwayTarget:0,passShank:0,
+         swing:0,swingOut:0,kill:0,
+         errHitting:0,errServing:0,errPassing:0,errNet:0,errTwoHand:0,errRotation:0};
+  days.forEach(function(d){ matches.forEach(function(m){ sets.forEach(function(s){
+    var c=counters(team,d,m,s,pid);
+    Object.keys(r).forEach(function(k){ r[k]+=nz(c[k]); });
+  }); }); });
+  return r;
+}
+
+function stats(r){
+  var sAtt=r.serve1+r.serve2+r.serve3+r.ace+r.serveOut;
+  var sIn=r.serve1+r.serve2+r.serve3+r.ace;
+  var pAtt=r.passToTarget+r.passNearTarget+r.passAwayTarget+r.passShank;
+  var pPts=r.passToTarget*3+r.passNearTarget*2+r.passAwayTarget;
+  var hAtt=r.swing+r.swingOut+r.kill;
+  var hErr=nz(r.swingOut);
+  var totErr=r.errHitting+r.errServing+r.errPassing+r.errNet+r.errTwoHand+r.errRotation;
+  return {
+    sAtt:sAtt, sIn:sIn, ace:r.ace,
+    sInPct:sAtt?sIn/sAtt:null,
+    // Serving pressure = (3s + 2s) / serve attempts — serves that limited opponent's options
+    sPres:sAtt?(r.serve2+r.serve3)/sAtt:null,
+    pAtt:pAtt, passAvg:pAtt?pPts/pAtt:null,
+    p3:r.passToTarget, p2:r.passNearTarget, p1:r.passAwayTarget, p0:r.passShank,
+    hAtt:hAtt, kills:r.kill, hErr:hErr,
+    hitAvg:hAtt?(r.kill-hErr)/hAtt:null,
+    totErr:totErr,
+    errH:r.errHitting, errS:r.errServing, errP:r.errPassing,
+    errN:r.errNet, err2:r.errTwoHand, errR:r.errRotation
+  };
+}
+
+function score(day,match,set){
+  var k=day+' - '+match+' - Set '+set;
+  return (D&&D.scoreStore&&D.scoreStore[k])||{our:0,opp:0};
+}
+
+function passClass(v){ return v===null?'zero':v>=2.5?'good':v>=2.0?'warn':'bad'; }
+function hitClass(v){  return v===null?'zero':v>=0.250?'good':'bad'; }
+function pctClass(v){  return v===null?'zero':v>=0.85?'good':v>=0.75?'warn':'bad'; }
+function presClass(v){ return v===null?'zero':v>=0.50?'good':v>=0.35?'warn':'bad'; }
+function errClass(v){  return v>0?'bad':'zero'; }
+
+function fv(v,dp,cls){ return v===null?'<td class="zero">—</td>':'<td class="'+(cls||'')+'">'+(+v).toFixed(dp)+'</td>'; }
+function fi(v,cls){ return '<td class="'+(cls||'')+'">'+v+'</td>'; }
+function tdL(v,style){ return '<td class="left"'+(style?' style="'+style+'"':'')+'>'+v+'</td>'; }
+
+// ── Populate filters ───────────────────────────────────────────────────────
+function populateFilters(){
+  var t=getTeam(); if(!t) return;
+  var days=getDays();
+  var dEl=document.getElementById('dayFilter');
+  dEl.innerHTML='<option value="all">All Days</option>';
+  days.forEach(function(d){ dEl.innerHTML+='<option value="'+d+'">'+d+'</option>'; });
+
+  var mEl=document.getElementById('matchFilter');
+  mEl.innerHTML='<option value="all">All Matches</option>';
+  (t.matches||['Match 1','Match 2','Match 3']).forEach(function(m){ mEl.innerHTML+='<option value="'+m+'">'+m+'</option>'; });
+
+  var pEl=document.getElementById('playerFilter');
+  pEl.innerHTML='';
+  var sorted=(t.players||[]).slice().sort(function(a,b){ return (parseInt(a.number)||999)-(parseInt(b.number)||999); });
+  sorted.forEach(function(p){ pEl.innerHTML+='<option value="'+p.id+'">'+(p.number?'#'+p.number+' ':'')+p.name+(p.position?' ('+p.position+')':'')+'</option>'; });
+}
+
+// ── Build set columns ──────────────────────────────────────────────────────
+function buildCols(team,days,matches,players){
+  var cols=[];
+  days.forEach(function(d){ matches.forEach(function(m){ SETS.forEach(function(s){
+    var sc=score(d,m,s);
+    var hasData=players.some(function(p){
+      var c=counters(team,d,m,s,p.id);
+      return Object.values(c).some(function(v){ return v>0; });
+    });
+    if(hasData||sc.our>0||sc.opp>0) cols.push({day:d,match:m,set:s,lbl:d.replace('Day ','D')+' '+m.replace('Match ','M')+' S'+s});
+  }); }); });
+  return cols;
+}
+
+// ── RENDER ─────────────────────────────────────────────────────────────────
+function render(){
+  var type=document.getElementById('reportType').value;
+  document.getElementById('playerFilterGroup').style.display=type==='player'?'flex':'none';
+  if(!D){ document.getElementById('reportWrap').innerHTML='<div class="empty">No report data found. Open this page from the VolleyStat app.</div>'; return; }
+  var t=getTeam();
+  if(!t){ document.getElementById('reportWrap').innerHTML='<div class="empty">No team data found.</div>'; return; }
+  if(type==='team') renderTeam(t);
+  else renderPlayer(t);
+}
+
+// ══ TEAM SUMMARY ══════════════════════════════════════════════════════════
+function renderTeam(team){
+  var days=getSelDays(), matches=getSelMatches();
+  var players=(team.players||[]).slice().sort(function(a,b){ return (parseInt(a.number)||999)-(parseInt(b.number)||999); });
+  var cols=buildCols(team,days,matches,players);
+  var date=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+
+  if(!cols.length){
+    document.getElementById('reportWrap').innerHTML='<div class="report-header"><h2>'+team.name+'</h2></div><div class="section"><div class="empty">No data recorded yet for this scope.</div></div>';
+    return;
+  }
+
+  var html='<div class="report-header"><h2>'+team.name+' — Team Report</h2><div class="meta">Generated '+date+'</div></div>';
+
+  // ── 1. SCORES ──────────────────────────────────────────────────────────
+  html+='<div class="section"><div class="section-title">Scores by Set</div><div class="tbl-wrap"><table>';
+  html+='<thead><tr><th class="left">Set</th><th>Us</th><th>Them</th><th>Result</th></tr></thead><tbody>';
+  cols.forEach(function(c){
+    var sc=score(c.day,c.match,c.set);
+    var res=sc.our>sc.opp?'<span class="good">W</span>':sc.our<sc.opp?'<span class="bad">L</span>':'<span class="warn">—</span>';
+    html+='<tr>'+tdL(c.lbl)+fi(sc.our)+fi(sc.opp)+fi(res)+'</tr>';
+  });
+  html+='</tbody></table></div></div>';
+
+  // ── 2. SERVE RECEIVE (all players with pass attempts) ──────────────────
+  var passers=players.filter(function(p){ var s=sumP(team,p.id,days,matches,SETS); return stats(s).pAtt>0; });
+  if(passers.length){
+    html+='<div class="section"><div class="section-title">Serve Receive — Pass Avg (0-3 scale)</div><div class="tbl-wrap"><table>';
+    html+='<thead><tr><th class="left">Player</th><th class="left">Pos</th>';
+    cols.forEach(function(c){ html+='<th>'+c.lbl+'</th>'; });
+    html+='<th class="group-sep">Total</th><th>Att</th><th>3s</th><th>2s</th><th>1s</th><th class="bad">0s</th></tr></thead><tbody>';
+    passers.forEach(function(p){
+      var tot=sumP(team,p.id,days,matches,SETS); var ts=stats(tot);
+      html+='<tr>'+tdL((p.number?'#'+p.number+' ':'')+p.name)+tdL(p.position||'—');
+      cols.forEach(function(c){
+        var s=sumP(team,p.id,[c.day],[c.match],[c.set]); var st=stats(s);
+        html+=fv(st.passAvg,2,passClass(st.passAvg));
+      });
+      html+=fv(ts.passAvg,2,passClass(ts.passAvg))+fi(ts.pAtt)+fi(ts.p3)+fi(ts.p2)+fi(ts.p1)+'<td class="bad">'+ts.p0+'</td></tr>';
+    });
+    // Team avg row
+    var tPts=0,tAtt=0;
+    players.forEach(function(p){ var s=sumP(team,p.id,days,matches,SETS); var st=stats(s); tPts+=s.passToTarget*3+s.passNearTarget*2+s.passAwayTarget; tAtt+=st.pAtt; });
+    var tAvg=tAtt?tPts/tAtt:null;
+    html+='<tr class="total-row">'+tdL('TEAM')+'<td></td>';
+    cols.forEach(function(c){
+      var cPts=0,cAtt=0;
+      players.forEach(function(p){ var s=sumP(team,p.id,[c.day],[c.match],[c.set]); var st=stats(s); cPts+=s.passToTarget*3+s.passNearTarget*2+s.passAwayTarget; cAtt+=st.pAtt; });
+      html+=fv(cAtt?cPts/cAtt:null,2,passClass(cAtt?cPts/cAtt:null));
+    });
+    html+=fv(tAvg,2,passClass(tAvg))+fi(tAtt)+'<td></td><td></td><td></td><td></td></tr>';
+    html+='</tbody></table></div></div>';
+  } else {
+    html+='<div class="section"><div class="section-title">Serve Receive</div><div class="empty">No serve receive data recorded.</div></div>';
+  }
+
+  // ── 3. HITTING AVERAGE (all players with hit attempts) ────────────────
+  var hitters=players.filter(function(p){ var s=sumP(team,p.id,days,matches,SETS); return stats(s).hAtt>0; });
+  if(hitters.length){
+    html+='<div class="section"><div class="section-title">Hitting Average — (Kills − Errors) ÷ Attempts</div><div class="tbl-wrap"><table>';
+    html+='<thead><tr><th class="left">Player</th><th class="left">Pos</th>';
+    cols.forEach(function(c){ html+='<th>'+c.lbl+'</th>'; });
+    html+='<th class="group-sep">Total Avg</th><th>Att</th><th>Kills</th><th class="bad">Errs</th></tr></thead><tbody>';
+    hitters.forEach(function(p){
+      var tot=sumP(team,p.id,days,matches,SETS); var ts=stats(tot);
+      html+='<tr>'+tdL((p.number?'#'+p.number+' ':'')+p.name)+tdL(p.position||'—');
+      cols.forEach(function(c){
+        var s=sumP(team,p.id,[c.day],[c.match],[c.set]); var st=stats(s);
+        html+=fv(st.hitAvg,3,hitClass(st.hitAvg));
+      });
+      html+=fv(ts.hitAvg,3,hitClass(ts.hitAvg))+fi(ts.hAtt)+fi(ts.kills)+'<td class="bad">'+ts.hErr+'</td></tr>';
+    });
+    html+='</tbody></table></div></div>';
+  } else {
+    html+='<div class="section"><div class="section-title">Hitting Average</div><div class="empty">No hitting data recorded.</div></div>';
+  }
+
+  // ── 4. SERVING PRESSURE (all players who served) ───────────────────────
+  var servers=players.filter(function(p){ var s=sumP(team,p.id,days,matches,SETS); return stats(s).sAtt>0; });
+  if(servers.length){
+    html+='<div class="section"><div class="section-title">Serving Pressure — Serve In% &amp; Pressure% (serves forcing pass ≤2)</div><div class="tbl-wrap"><table>';
+    html+='<thead><tr><th class="left">Player</th><th class="left">Pos</th>';
+    cols.forEach(function(c){ html+='<th>'+c.lbl+'<br><span style="font-size:9px;opacity:.75;">In% / Pres%</span></th>'; });
+    html+='<th class="group-sep">In%</th><th>Pres%</th><th>Att</th><th>ACEs</th></tr></thead><tbody>';
+    servers.forEach(function(p){
+      var tot=sumP(team,p.id,days,matches,SETS); var ts=stats(tot);
+      html+='<tr>'+tdL((p.number?'#'+p.number+' ':'')+p.name)+tdL(p.position||'—');
+      cols.forEach(function(c){
+        var s=sumP(team,p.id,[c.day],[c.match],[c.set]); var st=stats(s);
+        if(!st.sAtt){ html+='<td class="zero">—</td>'; return; }
+        var inStr=st.sInPct!==null?(st.sInPct*100).toFixed(0)+'%':'—';
+        var presStr=st.sPres!==null?(st.sPres*100).toFixed(0)+'%':'—';
+        html+='<td class="'+pctClass(st.sInPct)+'">'+inStr+' / <span style="font-size:10px;">'+presStr+'</span></td>';
+      });
+      var inCell=ts.sInPct!==null?'<td class="'+pctClass(ts.sInPct)+'">'+(ts.sInPct*100).toFixed(1)+'%</td>':'<td class="zero">—</td>';
+      var presCell=ts.sPres!==null?'<td class="'+presClass(ts.sPres)+'">'+(ts.sPres*100).toFixed(1)+'%</td>':'<td class="zero">—</td>';
+      html+=inCell+presCell+fi(ts.sAtt)+fi(ts.ace)+'</tr>';
+    });
+    html+='</tbody></table></div></div>';
+  }
+
+  // ── 5. UNFORCED ERRORS ─────────────────────────────────────────────────
+  html+='<div class="section"><div class="section-title">Unforced Errors by Set</div><div class="tbl-wrap"><table>';
+  html+='<thead><tr><th class="left">Set</th><th>Total</th><th>Hit Err</th><th>Srv Err</th><th>Pass Err</th><th>Net</th><th>2-Touch</th><th>OOR</th></tr></thead><tbody>';
+  var teamE={t:0,h:0,s:0,p:0,n:0,two:0,r:0};
+  cols.forEach(function(c){
+    var e={t:0,h:0,s:0,p:0,n:0,two:0,r:0};
+    players.forEach(function(p){ var r=sumP(team,p.id,[c.day],[c.match],[c.set]); var st=stats(r);
+      e.t+=st.totErr; e.h+=st.errH; e.s+=st.errS; e.p+=st.errP; e.n+=st.errN; e.two+=st.err2; e.r+=st.errR;
+    });
+    Object.keys(teamE).forEach(function(k){ teamE[k]+=e[k]; });
+    html+='<tr>'+tdL(c.lbl)+fi(e.t,errClass(e.t))+fi(e.h,errClass(e.h))+fi(e.s,errClass(e.s))+fi(e.p,errClass(e.p))+fi(e.n,errClass(e.n))+fi(e.two,errClass(e.two))+fi(e.r,errClass(e.r))+'</tr>';
+  });
+  html+='<tr class="total-row">'+tdL('TOTAL')+fi(teamE.t,'bad')+fi(teamE.h,errClass(teamE.h))+fi(teamE.s,errClass(teamE.s))+fi(teamE.p,errClass(teamE.p))+fi(teamE.n,errClass(teamE.n))+fi(teamE.two,errClass(teamE.two))+fi(teamE.r,errClass(teamE.r))+'</tr>';
+  html+='</tbody></table></div></div>';
+
+  document.getElementById('reportWrap').innerHTML=html;
+}
+
+// ══ INDIVIDUAL PLAYER ══════════════════════════════════════════════════════
+function renderPlayer(team){
+  var days=getSelDays(), matches=getSelMatches();
+  var pid=document.getElementById('playerFilter').value;
+  var p=(team.players||[]).find(function(x){ return x.id===pid; });
+  if(!p){ document.getElementById('reportWrap').innerHTML='<div class="empty">Select a player above.</div>'; return; }
+
+  var players=[p];
+  var cols=buildCols(team,days,matches,players);
+  var date=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  var tot=sumP(team,pid,days,matches,SETS); var ts=stats(tot);
+
+  var html='<div class="player-card">';
+  html+='<div class="player-card-header"><div class="player-num">'+(p.number?'#'+p.number:'—')+'</div>';
+  html+='<div class="player-info"><h3>'+p.name+'</h3><div class="pos">'+(p.position||'No position set')+' — '+team.name+'</div></div>';
+  html+='<div style="margin-left:auto;font-size:11px;opacity:.7;text-align:right;">'+date+'</div></div>';
+  html+='<div class="player-card-body">';
+
+  if(!cols.length){ html+='<div class="empty">No stats recorded for this player in the selected scope.</div></div></div>'; document.getElementById('reportWrap').innerHTML=html; return; }
+
+  // Serve Receive
+  if(ts.pAtt>0){
+    html+='<div class="subsection-title">Serve Receive</div><div class="tbl-wrap"><table>';
+    html+='<thead><tr><th class="left">Set</th><th>Att</th><th>3 — Perfect</th><th>2 — Good</th><th>1 — Poor</th><th class="bad">0 — Shank</th><th>Average</th></tr></thead><tbody>';
+    cols.forEach(function(c){
+      var s=sumP(team,pid,[c.day],[c.match],[c.set]); var st=stats(s);
+      if(!st.pAtt) return;
+      html+='<tr>'+tdL(c.lbl)+fi(st.pAtt)+fi(st.p3)+fi(st.p2)+fi(st.p1)+'<td class="bad">'+st.p0+'</td>'+fv(st.passAvg,2,passClass(st.passAvg))+'</tr>';
+    });
+    html+='<tr class="total-row">'+tdL('TOTAL')+fi(ts.pAtt)+fi(ts.p3)+fi(ts.p2)+fi(ts.p1)+'<td class="bad">'+ts.p0+'</td>'+fv(ts.passAvg,2,passClass(ts.passAvg))+'</tr>';
+    html+='</tbody></table></div>';
+  }
+
+  // Hitting
+  if(ts.hAtt>0){
+    html+='<div class="subsection-title">Attacking</div><div class="tbl-wrap"><table>';
+    html+='<thead><tr><th class="left">Set</th><th>Att</th><th>Kills</th><th class="bad">Errors</th><th>Swings</th><th>Hit Avg</th></tr></thead><tbody>';
+    cols.forEach(function(c){
+      var s=sumP(team,pid,[c.day],[c.match],[c.set]); var st=stats(s);
+      if(!st.hAtt) return;
+      html+='<tr>'+tdL(c.lbl)+fi(st.hAtt)+fi(st.kills)+'<td class="bad">'+st.hErr+'</td>'+fi(st.hAtt-st.kills-st.hErr)+fv(st.hitAvg,3,hitClass(st.hitAvg))+'</tr>';
+    });
+    html+='<tr class="total-row">'+tdL('TOTAL')+fi(ts.hAtt)+fi(ts.kills)+'<td class="bad">'+ts.hErr+'</td>'+fi(ts.hAtt-ts.kills-ts.hErr)+fv(ts.hitAvg,3,hitClass(ts.hitAvg))+'</tr>';
+    html+='</tbody></table></div>';
+  }
+
+  // Serving
+  if(ts.sAtt>0){
+    html+='<div class="subsection-title">Serving</div><div class="tbl-wrap"><table>';
+    html+='<thead><tr><th class="left">Set</th><th>Att</th><th>In</th><th>ACEs</th><th>Serve In%</th><th>Pressure%</th></tr></thead><tbody>';
+    cols.forEach(function(c){
+      var s=sumP(team,pid,[c.day],[c.match],[c.set]); var st=stats(s);
+      if(!st.sAtt) return;
+      html+='<tr>'+tdL(c.lbl)+fi(st.sAtt)+fi(st.sIn)+fi(st.ace)
+        +'<td class="'+pctClass(st.sInPct)+'">'+(st.sInPct!==null?(st.sInPct*100).toFixed(1)+'%':'—')+'</td>'
+        +'<td class="'+presClass(st.sPres)+'">'+(st.sPres!==null?(st.sPres*100).toFixed(1)+'%':'—')+'</td></tr>';
+    });
+    html+='<tr class="total-row">'+tdL('TOTAL')+fi(ts.sAtt)+fi(ts.sIn)+fi(ts.ace)
+      +'<td class="'+pctClass(ts.sInPct)+'">'+(ts.sInPct!==null?(ts.sInPct*100).toFixed(1)+'%':'—')+'</td>'
+      +'<td class="'+presClass(ts.sPres)+'">'+(ts.sPres!==null?(ts.sPres*100).toFixed(1)+'%':'—')+'</td></tr>';
+    html+='</tbody></table></div>';
+  }
+
+  // Errors
+  if(ts.totErr>0){
+    html+='<div class="subsection-title">Unforced Errors</div><div class="tbl-wrap"><table>';
+    html+='<thead><tr><th class="left">Set</th><th>Total</th><th>Hit</th><th>Serve</th><th>Pass</th><th>Net</th><th>2-Touch</th><th>OOR</th></tr></thead><tbody>';
+    cols.forEach(function(c){
+      var s=sumP(team,pid,[c.day],[c.match],[c.set]); var st=stats(s);
+      if(!st.totErr) return;
+      html+='<tr>'+tdL(c.lbl)+fi(st.totErr,'bad')+fi(st.errH,errClass(st.errH))+fi(st.errS,errClass(st.errS))+fi(st.errP,errClass(st.errP))+fi(st.errN,errClass(st.errN))+fi(st.err2,errClass(st.err2))+fi(st.errR,errClass(st.errR))+'</tr>';
+    });
+    html+='<tr class="total-row">'+tdL('TOTAL')+fi(ts.totErr,'bad')+fi(ts.errH,errClass(ts.errH))+fi(ts.errS,errClass(ts.errS))+fi(ts.errP,errClass(ts.errP))+fi(ts.errN,errClass(ts.errN))+fi(ts.err2,errClass(ts.err2))+fi(ts.errR,errClass(ts.errR))+'</tr>';
+    html+='</tbody></table></div>';
+  }
+
+  if(ts.pAtt===0&&ts.hAtt===0&&ts.sAtt===0&&ts.totErr===0){
+    html+='<div class="empty">No stats recorded for this player.</div>';
+  }
+
+  html+='</div></div>';
+  document.getElementById('reportWrap').innerHTML=html;
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+if(D){ populateFilters(); render(); }
+else document.getElementById('reportWrap').innerHTML='<div class="empty">No report data found. Open this page from the VolleyStat app using the Report button.</div>';
+</script>
+</body>
+</html>

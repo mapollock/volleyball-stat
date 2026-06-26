@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <meta name="theme-color" content="#1e3a8a"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-title" content="VolleyStat"/>
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml"/>
+  <title>VolleyStat — Sign In</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#f0f2f5;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;}
+    .card{background:#fff;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.1);width:100%;max-width:420px;overflow:hidden;}
+    .card-header{background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 60%,#1e40af 100%);padding:28px 24px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px;}
+    .card-header-logo{width:72px;height:72px;border-radius:16px;object-fit:cover;box-shadow:0 6px 20px rgba(0,0,0,.4);}
+    .card-header h1{color:#fff;font-size:24px;font-weight:900;letter-spacing:-.2px;margin-bottom:2px;}
+    .card-header p{color:#93c5fd;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;}
+    .card-header-badge{background:rgba(251,191,36,.18);border:1px solid #fbbf24;color:#fbbf24;font-size:9px;font-weight:900;letter-spacing:.1em;padding:2px 8px;border-radius:20px;text-transform:uppercase;margin-top:2px;}
+    .card-body{padding:24px;}
+    .tabs{display:flex;border-bottom:1px solid #e5e7eb;margin-bottom:20px;}
+    .tab{flex:1;padding:10px;text-align:center;font-size:13px;font-weight:700;color:#6b7280;cursor:pointer;border-bottom:2px solid transparent;background:none;border-left:none;border-right:none;border-top:none;}
+    .tab.active{color:#1e3a8a;border-bottom-color:#1e3a8a;}
+    .tab-panel{display:none;}
+    .tab-panel.active{display:block;}
+    .field{margin-bottom:14px;}
+    .field label{display:block;font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;}
+    .field input{width:100%;border:1px solid #e5e7eb;border-radius:10px;padding:11px 12px;font-size:14px;font-weight:600;background:#fff;outline:none;}
+    .field input:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1);}
+    .btn-primary{width:100%;background:#1e3a8a;color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:800;cursor:pointer;margin-bottom:10px;}
+    .btn-primary:hover{background:#1d4ed8;}
+    .btn-primary:disabled{background:#94a3b8;cursor:not-allowed;}
+    .btn-google{width:100%;background:#fff;color:#374151;border:1px solid #e5e7eb;border-radius:10px;padding:11px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:10px;}
+    .btn-google:hover{background:#f9fafb;}
+    .divider{display:flex;align-items:center;gap:10px;margin:16px 0;}
+    .divider span{font-size:12px;color:#9ca3af;white-space:nowrap;}
+    .divider::before,.divider::after{content:'';flex:1;height:1px;background:#e5e7eb;}
+    .error-msg{background:#fee2e2;color:#dc2626;border-radius:8px;padding:10px 12px;font-size:13px;font-weight:600;margin-bottom:12px;display:none;}
+    .error-msg.visible{display:block;}
+    .success-msg{background:#dcfce7;color:#16a34a;border-radius:8px;padding:10px 12px;font-size:13px;font-weight:600;margin-bottom:12px;display:none;}
+    .success-msg.visible{display:block;}
+    .share-notice{background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px;margin-bottom:16px;font-size:13px;color:#1e3a8a;}
+    .share-notice strong{display:block;margin-bottom:2px;}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="card-header">
+      <img src="icon-192.png" alt="VolleyStat" class="card-header-logo" />
+      <div>
+        <h1>VolleyStat</h1>
+        <p>Live Courtside Analytics</p>
+        <div class="card-header-badge">Alpha</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div id="shareNotice" class="share-notice" style="display:none;">
+        <strong>You've been invited to view stats</strong>
+        Sign in or create a free account to access the shared stats.
+      </div>
+
+      <div id="errorMsg" class="error-msg"></div>
+      <div id="successMsg" class="success-msg"></div>
+
+      <button class="btn-google" id="googleBtn">
+        <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z"/></svg>
+        Continue with Google
+      </button>
+
+      <div class="divider"><span>or use email</span></div>
+
+      <div class="tabs">
+        <button class="tab active" id="tabSignIn" onclick="switchTab('signin')">Sign In</button>
+        <button class="tab" id="tabCreate" onclick="switchTab('create')">Create Account</button>
+      </div>
+
+      <div id="panelSignin" class="tab-panel active">
+        <div class="field">
+          <label>Email</label>
+          <input type="email" id="signinEmail" placeholder="your@email.com" autocomplete="email"/>
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="signinPassword" placeholder="Password" autocomplete="current-password"/>
+        </div>
+        <button class="btn-primary" id="signinBtn">Sign In</button>
+      </div>
+
+      <div id="panelCreate" class="tab-panel">
+        <div class="field">
+          <label>Email</label>
+          <input type="email" id="createEmail" placeholder="your@email.com" autocomplete="email"/>
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="createPassword" placeholder="At least 6 characters" autocomplete="new-password"/>
+        </div>
+        <div class="field">
+          <label>Confirm Password</label>
+          <input type="password" id="createConfirm" placeholder="Repeat password" autocomplete="new-password"/>
+        </div>
+        <button class="btn-primary" id="createBtn">Create Account</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { signInWithGoogle, signInWithEmail, createAccount, onAuthReady } from './firebase-sync.js';
+
+    // Check for share token in URL
+    const params = new URLSearchParams(window.location.search);
+    const shareToken = params.get('share');
+    if (shareToken) {
+      document.getElementById('shareNotice').style.display = 'block';
+      sessionStorage.setItem('pendingShare', shareToken);
+    }
+
+    // If already signed in, redirect
+    onAuthReady(function(user) {
+      if (user) {
+        const dest = shareToken
+          ? 'share.html?share=' + shareToken
+          : 'index.html';
+        window.location.href = dest;
+      }
+    });
+
+    function showError(msg) {
+      const el = document.getElementById('errorMsg');
+      el.textContent = msg;
+      el.classList.add('visible');
+      document.getElementById('successMsg').classList.remove('visible');
+    }
+    function showSuccess(msg) {
+      const el = document.getElementById('successMsg');
+      el.textContent = msg;
+      el.classList.add('visible');
+      document.getElementById('errorMsg').classList.remove('visible');
+    }
+    function clearMessages() {
+      document.getElementById('errorMsg').classList.remove('visible');
+      document.getElementById('successMsg').classList.remove('visible');
+    }
+
+    window.switchTab = function(tab) {
+      document.getElementById('panelSignin').classList.toggle('active', tab === 'signin');
+      document.getElementById('panelCreate').classList.toggle('active', tab === 'create');
+      document.getElementById('tabSignIn').classList.toggle('active', tab === 'signin');
+      document.getElementById('tabCreate').classList.toggle('active', tab === 'create');
+      clearMessages();
+    };
+
+    document.getElementById('googleBtn').addEventListener('click', async function() {
+      clearMessages();
+      try {
+        await signInWithGoogle();
+      } catch(e) {
+        showError('Google sign-in failed: ' + e.message);
+      }
+    });
+
+    document.getElementById('signinBtn').addEventListener('click', async function() {
+      clearMessages();
+      const email = document.getElementById('signinEmail').value.trim();
+      const pass  = document.getElementById('signinPassword').value;
+      if (!email || !pass) { showError('Please enter your email and password.'); return; }
+      this.disabled = true;
+      try {
+        await signInWithEmail(email, pass);
+      } catch(e) {
+        showError(e.code === 'auth/invalid-credential' ? 'Incorrect email or password.' : e.message);
+        this.disabled = false;
+      }
+    });
+
+    document.getElementById('createBtn').addEventListener('click', async function() {
+      clearMessages();
+      const email   = document.getElementById('createEmail').value.trim();
+      const pass    = document.getElementById('createPassword').value;
+      const confirm = document.getElementById('createConfirm').value;
+      if (!email || !pass) { showError('Please fill in all fields.'); return; }
+      if (pass.length < 6) { showError('Password must be at least 6 characters.'); return; }
+      if (pass !== confirm) { showError('Passwords do not match.'); return; }
+      this.disabled = true;
+      try {
+        await createAccount(email, pass);
+        showSuccess('Account created! Signing you in…');
+      } catch(e) {
+        showError(e.code === 'auth/email-already-in-use' ? 'That email is already registered. Try signing in.' : e.message);
+        this.disabled = false;
+      }
+    });
+
+    // Allow enter key to submit
+    document.addEventListener('keydown', function(e) {
+      if (e.key !== 'Enter') return;
+      const active = document.querySelector('.tab-panel.active');
+      if (active && active.id === 'panelSignin') document.getElementById('signinBtn').click();
+      if (active && active.id === 'panelCreate') document.getElementById('createBtn').click();
+    });
+  </script>
+</body>
+</html>

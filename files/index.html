@@ -1,0 +1,738 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <meta name="theme-color" content="#1e3a8a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="VolleyStat" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="shortcut icon" href="favicon.svg" />
+  <title>VolleyStat</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#f0f2f5;color:#111827;}
+    .page-wrap{max-width:1012px;margin:0 auto;background:#f0f2f5;box-shadow:0 0 30px rgba(0,0,0,.08);}
+
+    /* ── Modal stacking ── */
+    .modal-backdrop{z-index:1000}
+    #rotationBackdrop{z-index:1100}
+    #pickerBackdrop{z-index:1200}
+
+    /* ── Segmented ── */
+    .segmented{display:inline-flex;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden}
+    .seg-btn{border:0;background:transparent;padding:8px 14px;font-weight:800;color:#374151;cursor:pointer;min-height:40px;font-size:13px;}
+    .seg-btn[aria-pressed="true"]{background:#111827;color:#fff}
+
+    /* ── Rotation wheel ── */
+    .rotation-wheel{display:grid;grid-template-columns:repeat(3,120px);grid-template-rows:repeat(2,90px);gap:12px;justify-content:center;margin:10px 0 14px}
+    .rotation-slot{border:2px solid #e5e7eb;border-radius:12px;padding:8px;text-align:center;cursor:pointer;user-select:none;background:#fff;display:flex;flex-direction:column;justify-content:center;align-items:center;}
+    .rotation-slot .rot-pos{font-size:12px;color:#6b7280;font-weight:800;}
+    .rotation-slot .rot-player{margin-top:6px;font-weight:900;color:#111827;font-size:13px;line-height:1.1}
+
+    /* ══ SECTION 1: Title ══ */
+    .title-bar{background:#fff;border-bottom:1px solid #e5e7eb;padding:10px 16px;text-align:center;}
+    .title-bar h1{font-size:19px;font-weight:900;letter-spacing:.1px;}
+    .title-bar .ver{font-size:11px;color:#6b7280;margin-top:2px;}
+    .title-bar a{font-size:12px;color:#2563eb;font-weight:700;text-decoration:none;}
+
+    /* ══ SECTION 2: Score ══ */
+    .score-bar{background:#1e3a8a;padding:8px 12px;}
+    .score-inner{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+    .score-side{display:flex;align-items:center;gap:6px;}
+    .score-adj{display:flex;flex-direction:column;gap:3px;}
+    .score-adj-btn{appearance:none;border:none;background:rgba(255,255,255,.2);color:#fff;width:30px;height:30px;border-radius:6px;font-size:17px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;touch-action:manipulation;}
+    .score-adj-btn:active{background:rgba(255,255,255,.4)}
+    .score-num{font-size:32px;font-weight:900;color:#fff;line-height:1;min-width:36px;text-align:center;}
+    .score-label{font-size:10px;font-weight:800;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.05em;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .score-center{flex:1;text-align:center;font-size:10px;color:rgba(255,255,255,.4);letter-spacing:.03em;padding:0 4px;}
+
+    /* ══ SECTION 3: Player strip ══ */
+    .player-strip{background:#fff;border-bottom:2px solid #e5e7eb;padding:8px 14px;}
+    .ps-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:6px;}
+    .ps-title{font-size:11px;font-weight:800;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;}
+    .ps-actions{display:flex;gap:5px;flex-wrap:wrap;}
+    .ps-btn{appearance:none;border:1px solid #e5e7eb;background:#f9fafb;color:#374151;padding:0 10px;height:32px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
+    .ps-btn.red{color:#dc2626;border-color:rgba(220,38,38,.3);}
+    .ps-btns{display:flex;flex-wrap:wrap;gap:5px;}
+    .player-pill{appearance:none;border:2px solid #e5e7eb;background:#fff;color:#374151;padding:6px 10px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:all .1s;white-space:nowrap;}
+    .player-pill.active{background:#1e3a8a;color:#fff;border-color:#1e3a8a;}
+    .sel-bar{margin-top:6px;padding:5px 10px;background:#1e3a8a;border-radius:7px;color:#fff;font-size:12px;font-weight:700;text-align:center;display:none;}
+
+    /* ══ SECTION 4: Stat buttons ══ */
+    .stat-section{padding:10px 14px 0;}
+    /* Portrait phone: stack groups full width, buttons wrap in rows */
+    @media(max-width:649px){
+      /* Mobile portrait: stack all groups full width */
+      .stat-section{display:block;padding:5px 8px 0;}
+      .stat-section .stat-group{margin-bottom:6px;padding:7px 8px;}
+      .stat-group-title{font-size:10px;margin-bottom:5px;}
+
+      /* Buttons: wrap allowed so rows never overflow */
+      .stat-grid{flex-wrap:wrap;gap:4px;}
+
+      /* Base button: compact, equal share of row */
+      .stat-btn{
+        min-height:38px;
+        font-size:13px;
+        font-weight:900;
+        padding:4px 4px;
+        border-radius:7px;
+        flex:1;
+        min-width:60px;
+        white-space:nowrap;
+      }
+
+      /* span2 = full row on small screens (OUT, Swing Out, O.O.R.) */
+      .span2{flex:1 0 100%;}
+
+      /* Serving: 1 2 3 on top row, ACE + OUT auto-wrap below */
+      .cols-3 .stat-btn{flex:1;min-width:55px;}
+
+      /* 4-button rows (Srv/Rec, Errors): 2 per row */
+      .cols-2 .stat-btn{flex:1;min-width:calc(50% - 4px);}
+    }
+    /* Tablet/landscape: 2-column group grid, single-row buttons */
+    @media(min-width:650px){
+      .stat-section{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px;}
+      .stat-section .stat-group{margin-bottom:0;}
+      .stat-grid{flex-wrap:nowrap;}
+    }
+    .stat-group{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px;margin-bottom:10px;}
+    .stat-group-title{font-size:11px;font-weight:800;color:#6b7280;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;}
+    .stat-grid{display:flex;gap:6px;}
+    .span2{flex:2;}
+    .stat-btn{appearance:none;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;font-size:13px;min-height:36px;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;display:flex;align-items:center;justify-content:center;padding:5px 8px;text-align:center;line-height:1.1;transition:background .08s,transform .06s;box-shadow:0 1px 4px rgba(37,99,235,.2);flex:1;white-space:nowrap;}
+    .stat-btn:active{background:#1d4ed8;transform:scale(.96);box-shadow:none}
+    .stat-btn.danger{background:#dc2626;box-shadow:0 2px 6px rgba(220,38,38,.2)}
+    .stat-btn.danger:active{background:#b91c1c}
+    .stat-btn:disabled{background:#94a3b8;box-shadow:none;cursor:not-allowed}
+
+    /* ══ SECTION 5: Stats table ══ */
+    .table-section{padding:10px 14px;}
+    .onboarding{margin-bottom:10px;}
+    .onboarding-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px;}
+    .onboarding-title{font-weight:900;font-size:16px;margin-bottom:6px;}
+    .onboarding-sub{color:#6b7280;font-weight:700;font-size:13px;margin-bottom:10px;}
+    .onboarding-steps{margin:0 0 12px 18px;font-weight:700;}
+    .onboarding-steps li{margin:6px 0;}
+    .onboarding-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;}
+    .table-wrap{background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:auto;box-shadow:0 2px 8px rgba(0,0,0,.04);}
+    table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;min-width:960px;}
+    thead th{background:#fbfbfb;border-bottom:1px solid #e5e7eb;padding:9px 10px;text-align:right;white-space:nowrap;font-weight:800;}
+    thead th.left{text-align:left;}
+    tbody td{border-bottom:1px solid #e5e7eb;padding:9px 10px;text-align:right;}
+    tbody tr:nth-child(even){background:#fcfcfc;}
+    tbody td.left{text-align:left;}
+    .sticky-col{position:sticky;left:0;background:inherit;z-index:1;}
+    th.sticky-col{z-index:2;}
+    .hint{padding:10px 12px;color:#6b7280;font-size:11px;border-top:1px solid #e5e7eb;}
+
+    /* ══ SECTION 6: Bottom controls ══ */
+    .bottom-controls{background:#fff;border-top:2px solid #e5e7eb;padding:12px 14px calc(12px + env(safe-area-inset-bottom,0px));}
+    .bc-grid{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;}
+    @media(max-width:649px){.bc-select{min-width:80px;font-size:12px;} .bc-btn{font-size:12px;padding:7px 10px;} .bc-input{min-width:120px;font-size:12px;}}
+    .bc-group{display:flex;flex-direction:column;gap:5px;}
+    .bc-label{font-size:11px;font-weight:800;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;}
+    .bc-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+    .bc-select{border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-weight:700;background:#fff;font-size:13px;min-width:105px;}
+    .bc-btn{appearance:none;border:1px solid #e5e7eb;background:#f9fafb;color:#374151;padding:8px 12px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;min-height:38px;}
+    .bc-btn:hover{background:#f3f4f6;}
+    .bc-btn.primary{background:#2563eb;color:#fff;border-color:#1d4ed8;}
+    .bc-btn.danger{background:#dc2626;color:#fff;border-color:#b91c1c;}
+    .bc-input{border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;background:#fff;min-width:150px;}
+
+    /* ══ Login overlay ══ */
+    #loginOverlay{position:fixed;inset:0;background:#f0f2f5;z-index:9999;display:none;align-items:center;justify-content:center;padding:20px;}
+    .login-card{background:#fff;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.12);width:100%;max-width:420px;overflow:hidden;}
+    .login-header{background:#1e3a8a;padding:28px 24px;text-align:center;}
+    .login-header h2{color:#fff;font-size:22px;font-weight:900;margin-bottom:4px;}
+    .login-header p{color:rgba(255,255,255,.65);font-size:13px;}
+    .login-body{padding:24px;}
+    .login-tabs{display:flex;border-bottom:1px solid #e5e7eb;margin-bottom:20px;}
+    .login-tab{flex:1;padding:10px;text-align:center;font-size:13px;font-weight:700;color:#6b7280;cursor:pointer;border:none;border-bottom:2px solid transparent;background:none;}
+    .login-tab.active{color:#1e3a8a;border-bottom-color:#1e3a8a;}
+    .login-panel{display:none;}
+    .login-panel.active{display:block;}
+    .login-field{margin-bottom:14px;}
+    .login-field label{display:block;font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;}
+    .login-field input{width:100%;border:1px solid #e5e7eb;border-radius:10px;padding:11px 12px;font-size:14px;font-weight:600;outline:none;}
+    .login-field input:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1);}
+    .login-btn-primary{width:100%;background:#1e3a8a;color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:800;cursor:pointer;margin-bottom:10px;}
+    .login-btn-primary:hover{background:#1d4ed8;}
+    .login-btn-primary:disabled{background:#94a3b8;cursor:not-allowed;}
+    .login-btn-google{width:100%;background:#fff;color:#374151;border:1px solid #e5e7eb;border-radius:10px;padding:11px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:10px;}
+    .login-btn-google:hover{background:#f9fafb;}
+    .login-divider{display:flex;align-items:center;gap:10px;margin:14px 0;color:#9ca3af;font-size:12px;}
+    .login-divider::before,.login-divider::after{content:'';flex:1;height:1px;background:#e5e7eb;}
+    .login-error{background:#fee2e2;color:#dc2626;border-radius:8px;padding:10px 12px;font-size:13px;font-weight:600;margin-bottom:12px;display:none;}
+    .login-error.visible{display:block;}
+
+    /* ══ Install banner ══ */
+    #installBanner{display:none;background:#1e3a8a;color:#fff;padding:10px 14px;font-size:13px;font-weight:700;align-items:center;justify-content:space-between;gap:8px;}
+    #installBanner.visible{display:flex}
+    #installBannerBtn{background:#fff;color:#1e3a8a;border:none;border-radius:8px;padding:7px 14px;font-weight:800;font-size:12px;cursor:pointer;}
+    #installBannerDismiss{background:transparent;border:none;color:rgba(255,255,255,.7);font-size:20px;cursor:pointer;padding:0 4px;}
+
+    /* ══ Sync bar ══ */
+    #syncBar{background:#1e3a8a;padding:5px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+    #syncStatus{font-size:11px;font-weight:700;color:#93c5fd;}
+    .sync-settings-btn{background:transparent;border:1px solid rgba(255,255,255,.3);color:#93c5fd;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;}
+
+    /* ══ Tap flash ══ */
+    @keyframes tapFlash{0%{opacity:1}50%{opacity:.5}100%{opacity:1}}
+    .tap-flash{animation:tapFlash .15s ease}
+
+    /* ══ Modals ══ */
+    .modal-backdrop-el{position:fixed;inset:0;background:rgba(17,24,39,.45);display:flex;align-items:center;justify-content:center;padding:20px;z-index:999;}
+    .hidden{display:none;}
+    .modal{width:min(820px,100%);background:#fff;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.12);overflow:hidden;}
+    .modal-header{padding:12px 14px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;}
+    .modal-title{font-weight:900;font-size:15px;}
+    .icon-btn{border:none;background:transparent;font-size:18px;cursor:pointer;padding:6px 10px;border-radius:10px;}
+    .icon-btn:hover{background:#f3f4f6;}
+    .modal-body{padding:12px 14px;}
+    .modal-footer{padding:12px 14px;border-top:1px solid #e5e7eb;display:flex;justify-content:flex-end;gap:10px;}
+    .player-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;}
+    .player-btn{text-align:left;border:1px solid #e5e7eb;background:#fff;padding:12px;border-radius:12px;cursor:pointer;font-weight:800;font-size:14px;}
+    .player-btn:hover{border-color:#93c5fd;background:#f0f9ff;}
+    .player-sub{display:block;margin-top:4px;font-weight:600;color:#6b7280;font-size:12px;}
+    .form{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#fbfbfb;}
+    .form-row{display:flex;gap:10px;flex-wrap:wrap;}
+    .field{flex:1;min-width:200px;display:flex;flex-direction:column;gap:6px;}
+    .field.small{min-width:140px;flex:0 0 140px;}
+    .field label{font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;font-weight:700;}
+    input,select{border:1px solid #e5e7eb;border-radius:10px;padding:10px;font-weight:700;background:#fff;font-size:14px;width:100%;}
+    .form-actions{margin-top:10px;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;}
+    .roster-list-wrap{margin-top:12px;}
+    .roster-list-title{font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;margin:8px 0;font-weight:700;}
+    .roster-list{display:flex;flex-direction:column;gap:8px;}
+    .roster-item{display:flex;gap:10px;align-items:center;justify-content:space-between;border:1px solid #e5e7eb;border-radius:12px;padding:10px;background:#fff;}
+    .roster-item .meta{display:flex;flex-direction:column;}
+    .roster-item .meta .top{font-weight:900;}
+    .roster-item .meta .bottom{font-size:12px;color:#6b7280;font-weight:700;}
+    .roster-item .actions{display:flex;gap:8px;}
+    .confirm-grid{display:flex;flex-direction:column;gap:10px;}
+    .confirm-row{display:grid;grid-template-columns:110px 1fr;gap:12px;align-items:start;padding:10px;border:1px solid #e5e7eb;border-radius:12px;background:#fbfbfb;}
+    .confirm-label{font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;font-weight:800;}
+    .confirm-value{font-weight:800;word-break:break-word;}
+    .confirm-note{margin-top:12px;font-size:12px;color:#6b7280;}
+    .btn{appearance:none;border:1px solid #e5e7eb;background:#fff;color:#111827;padding:10px 12px;border-radius:10px;cursor:pointer;font-weight:700;font-size:13px;transition:.15s;}
+    .btn:hover{border-color:#cbd5e1;}
+    .btn.secondary{background:#f3f4f6;}
+    .btn.danger{background:#dc2626;color:#fff;border-color:#b91c1c;}
+    .btn:disabled{opacity:.55;cursor:not-allowed;}
+    #exportConfirmOk{background:#2563eb;border-color:#1d4ed8;color:#fff;}
+  </style>
+</head>
+<body>
+
+  <!-- PWA install banner -->
+  <div id="installBanner">
+    <span>📲 Add VolleyStat to your home screen</span>
+    <button id="installBannerBtn">Install</button>
+    <button id="installBannerDismiss" aria-label="Dismiss">✕</button>
+  </div>
+
+  <!-- Sync status bar -->
+  <div id="syncBar">
+    <span id="syncStatus">↑ Connecting…</span>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <span id="userEmailDisplay" style="font-size:11px;color:rgba(255,255,255,.5);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+      <button class="sync-settings-btn" onclick="document.getElementById('syncDevicePanel').classList.toggle('hidden')">Sync Settings</button>
+    </div>
+  </div>
+  <div id="syncDevicePanel" class="hidden" style="background:#1e3a8a;border-top:1px solid rgba(255,255,255,.15);padding:10px 14px;font-size:12px;">
+    <div style="max-width:480px;margin:0 auto;">
+
+    <!-- User + sign out -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,.1);">
+      <div>
+        <div style="color:#93c5fd;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;">Signed in as</div>
+        <div id="syncUserEmail" style="color:#fff;font-size:12px;font-weight:700;margin-top:1px;">—</div>
+      </div>
+      <button onclick="window._vsSignOut()" style="background:transparent;border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;">Sign Out</button>
+    </div>
+
+    <!-- Share stats -->
+    <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,.1);">
+      <div style="color:#93c5fd;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Share Stats</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button onclick="window._vsShareTeam()" style="flex:1;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;min-width:120px;">&#x1F465; Share Full Team</button>
+        <button onclick="window._vsSharePlayer()" style="flex:1;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;min-width:120px;">&#x1F464; Share Player</button>
+      </div>
+      <div id="activeSharesList" style="margin-top:6px;"></div>
+    </div>
+
+    <!-- Session -->
+    <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,.1);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div style="color:#93c5fd;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;">My Sessions</div>
+        <button onclick="window._vsRefreshSessions()" style="background:transparent;border:1px solid rgba(255,255,255,.25);color:#93c5fd;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;">&#8635; Refresh</button>
+      </div>
+      <div id="mySessionLabel" style="background:rgba(255,255,255,.1);border-radius:6px;padding:6px 8px;color:#fff;font-size:11px;font-weight:700;margin-bottom:6px;">—</div>
+      <select id="sessionDropdown" style="width:100%;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:6px;padding:7px 8px;font-size:11px;font-weight:600;margin-bottom:6px;">
+        <option value="">— tap Refresh to load sessions —</option>
+      </select>
+      <button onclick="window._vsConnectSession()" style="width:100%;background:#2563eb;border:none;color:#fff;border-radius:6px;padding:7px;font-size:11px;font-weight:800;cursor:pointer;">Connect to Selected Session</button>
+    </div>
+
+    <!-- QR / advanced collapsed -->
+    <details>
+      <summary style="color:rgba(255,255,255,.3);font-size:10px;cursor:pointer;list-style:none;text-align:center;padding:3px 0;">&#9658; QR / advanced options</summary>
+      <div style="margin-top:8px;display:flex;gap:6px;">
+        <button onclick="window._vsShowQr()" style="flex:1;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);color:#fff;border-radius:6px;padding:6px;font-size:10px;font-weight:700;cursor:pointer;">&#x1F4F1; Show QR</button>
+        <button onclick="window._vsScanQr()" style="flex:1;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);color:#fff;border-radius:6px;padding:6px;font-size:10px;font-weight:700;cursor:pointer;">&#x1F4F7; Scan QR</button>
+      </div>
+      <div id="qrCodeWrap" style="display:none;margin-top:8px;background:#fff;border-radius:8px;padding:10px;flex-direction:column;align-items:center;justify-content:center;"><div id="qrCanvas"></div><div style="color:#1e3a8a;font-size:10px;font-weight:700;margin-top:4px;">Scan to connect</div></div>
+      <div id="scanWrap" style="display:none;margin-top:8px;">
+        <video id="qrVideo" style="width:100%;border-radius:8px;max-height:160px;object-fit:cover;" playsinline autoplay></video>
+        <div id="scanStatus" style="color:#93c5fd;font-size:10px;margin-top:4px;">Point camera at a VolleyStat QR code</div>
+        <button onclick="window._vsCancelScan()" style="background:transparent;border:1px solid rgba(255,255,255,.25);color:#93c5fd;border-radius:5px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer;margin-top:4px;">Cancel</button>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:6px;">
+        <code id="syncDeviceId" style="background:rgba(0,0,0,.3);color:#e2e8f0;padding:4px 6px;border-radius:5px;font-size:9px;flex:1;word-break:break-all;"></code>
+        <button onclick="window._vsCopyDeviceId()" style="background:rgba(255,255,255,.1);border:none;color:#fff;border-radius:5px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer;">Copy</button>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:6px;">
+        <input id="switchDeviceInput" placeholder="Paste Device ID" style="flex:1;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.15);color:#fff;border-radius:5px;padding:5px 8px;font-size:10px;" />
+        <button onclick="window._vsSwitchDevice()" style="background:#2563eb;border:none;color:#fff;border-radius:5px;padding:5px 10px;font-size:10px;font-weight:700;cursor:pointer;">Switch</button>
+      </div>
+    </details>
+    </div><!-- end max-width wrapper -->
+  </div>
+
+  <!-- QR + Camera scripts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+
+  <!-- ══ LOGIN OVERLAY — shown when not authenticated ══ -->
+  <div id="loginOverlay" style="display:none;">
+    <div class="login-card">
+      <div class="login-header">
+        <h2>&#x1F3D0; VolleyStat</h2>
+        <p>Live Courtside Tracker</p>
+      </div>
+      <div class="login-body">
+        <div id="loginError" class="login-error"></div>
+        <button class="login-btn-google" id="loginGoogleBtn">
+          <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z"/></svg>
+          Continue with Google
+        </button>
+        <div class="login-divider">or use email</div>
+        <div class="login-tabs">
+          <button class="login-tab active" id="loginTabSignin" onclick="loginSwitchTab('signin')">Sign In</button>
+          <button class="login-tab" id="loginTabCreate" onclick="loginSwitchTab('create')">Create Account</button>
+        </div>
+        <div id="loginPanelSignin" class="login-panel active">
+          <div class="login-field"><label>Email</label><input type="email" id="loginEmail" placeholder="your@email.com" autocomplete="email"/></div>
+          <div class="login-field"><label>Password</label><input type="password" id="loginPassword" placeholder="Password" autocomplete="current-password"/></div>
+          <button class="login-btn-primary" id="loginSigninBtn">Sign In</button>
+        </div>
+        <div id="loginPanelCreate" class="login-panel">
+          <div class="login-field"><label>Email</label><input type="email" id="createEmail" placeholder="your@email.com" autocomplete="email"/></div>
+          <div class="login-field"><label>Password</label><input type="password" id="createPassword" placeholder="At least 6 characters" autocomplete="new-password"/></div>
+          <div class="login-field"><label>Confirm Password</label><input type="password" id="createConfirm" placeholder="Repeat password"/></div>
+          <button class="login-btn-primary" id="loginCreateBtn">Create Account</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-wrap" style="display:none;">
+  <!-- ══ 1. TITLE ══════════════════════════════════════════════════════════ -->
+  <div class="title-bar">
+    <h1>VolleyStat — Live Courtside Tracker</h1>
+    <div class="ver">Version Alpha 0.1.58</div>
+    <div style="margin-top:4px;"><a href="quickstart.pdf" target="_blank">📄 Quick Start Guide</a></div>
+  </div>
+
+  <!-- ══ 2. SCORE ══════════════════════════════════════════════════════════ -->
+  <div class="score-bar" style="display:none;">
+    <div class="score-inner">
+      <div class="score-side">
+        <div class="score-adj">
+          <button class="score-adj-btn" id="ourScoreUp" aria-label="Increase our score">+</button>
+          <button class="score-adj-btn" id="ourScoreDown" aria-label="Decrease our score">−</button>
+        </div>
+        <div>
+          <div class="score-num" id="ourScore">0</div>
+          <div class="score-label" id="scoreTeamName">Your Team</div>
+        </div>
+      </div>
+      <div class="score-center" id="scoreSetLabel">Day 1 · Match 1 · Set 1</div>
+      <div class="score-side">
+        <div style="text-align:right;">
+          <div class="score-num" id="oppScore">0</div>
+          <div class="score-label" style="text-align:right;">Opponent</div>
+        </div>
+        <div class="score-adj">
+          <button class="score-adj-btn" id="oppScoreUp" aria-label="Increase opponent score">+</button>
+          <button class="score-adj-btn" id="oppScoreDown" aria-label="Decrease opponent score">−</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 3. SELECT PLAYER ══════════════════════════════════════════════════ -->
+  <div class="player-strip" id="playerStrip" style="display:none;">
+    <div class="ps-header">
+      <span class="ps-title">Select Player</span>
+      <div class="ps-actions">
+        <button id="clearPlayerBtn" class="ps-btn red">✕ Clear</button>
+        <button id="mobileUndoBtn" class="ps-btn">Undo</button>
+        <button id="mobileEditBtn" class="ps-btn">Edit</button>
+        <button onclick="window._vsOpenReport()" class="ps-btn" style="background:#1e3a8a;color:#fff;border-color:#1e3a8a;">&#x1F4CA; Report</button>
+        <div id="mobileRotationBtnWrap" style="display:none;">
+          <button id="mobileRotationBtn" class="ps-btn">Rotation</button>
+        </div>
+      </div>
+    </div>
+    <div class="ps-btns" id="playerStripBtns"></div>
+    <div class="sel-bar" id="selectedPlayerBar"></div>
+    <select id="mobilePlayerSelect" style="display:none;"></select>
+  </div>
+
+  <!-- ══ 4. STAT BUTTONS ════════════════════════════════════════════════════ -->
+  <div class="stat-section">
+
+    <div class="stat-group">
+      <div class="stat-group-title">Serving</div>
+      <div class="stat-grid cols-3">
+        <button class="stat-btn" data-action="serve1">1</button>
+        <button class="stat-btn" data-action="serve2">2</button>
+        <button class="stat-btn" data-action="serve3">3</button>
+        <button class="stat-btn" data-action="ace">ACE</button>
+        <button class="stat-btn danger span2" data-action="serveOut">OUT</button>
+      </div>
+    </div>
+
+    <div class="stat-group">
+      <div class="stat-group-title">Srv / Rec</div>
+      <div class="stat-grid cols-2">
+        <button class="stat-btn" data-action="passToTarget">3</button>
+        <button class="stat-btn" data-action="passNearTarget">2</button>
+        <button class="stat-btn" data-action="passAwayTarget">1</button>
+        <button class="stat-btn danger" data-action="passShank">0</button>
+      </div>
+    </div>
+
+    <div class="stat-group">
+      <div class="stat-group-title">Attacking</div>
+      <div class="stat-grid cols-2">
+        <button class="stat-btn" data-action="kill">Kill</button>
+        <button class="stat-btn" data-action="swing">Swing</button>
+        <button class="stat-btn danger span2" data-action="swingOut">Out</button>
+      </div>
+    </div>
+
+    <div class="stat-group">
+      <div class="stat-group-title">Unforced Errors</div>
+      <div class="stat-grid cols-2">
+        <button class="stat-btn danger span2" data-action="errPassing">Passing</button>
+        <button class="stat-btn danger" data-action="errNet">Net</button>
+        <button class="stat-btn danger" data-action="errTwoHand">2-Touch</button>
+        <button class="stat-btn danger span2" data-action="errRotation">O.O.R.</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══ 5. PLAYER STATS TABLE ══════════════════════════════════════════════ -->
+  <div class="table-section">
+
+    <div class="table-wrap">
+      <table id="statsTable">
+        <thead>
+          <tr>
+            <th class="sticky-col left" style="background:#f9fafb;">Player</th>
+            <th id="thServeAtt" style="background:#eff6ff;">Serve Att</th>
+            <th id="thServeIn" style="background:#eff6ff;">Serves In</th>
+            <th id="thAces" style="background:#eff6ff;">ACE</th>
+            <th id="thPressure" style="background:#eff6ff;">Serve In%</th>
+            <th id="thPassAtt" style="background:#dbeafe;border-left:2px solid #bfdbfe;">Srv/Rec Att</th>
+            <th id="thPassAvg" style="background:#dbeafe;">Srv/Rec Avg</th>
+            <th style="background:#eff6ff;border-left:2px solid #bfdbfe;">Hit Att</th>
+            <th style="background:#eff6ff;">Hits In</th>
+            <th style="background:#eff6ff;">Kills</th>
+            <th style="background:#eff6ff;">Hit Avg</th>
+            <th style="background:#dbeafe;border-left:2px solid #bfdbfe;">Errors</th>
+            <th style="background:#dbeafe;">Hit Err</th>
+            <th style="background:#dbeafe;">Srv Err</th>
+            <th style="background:#dbeafe;">Pass Err</th>
+            <th style="background:#dbeafe;">Net</th>
+            <th style="background:#dbeafe;">2-Hand</th>
+            <th style="background:#dbeafe;">OOR</th>
+          </tr>
+        </thead>
+        <tbody id="statsBody"></tbody>
+      </table>
+      <div id="hintText" class="hint">Button 1 = opponent passed a 3 (easy) · Button 3 = opponent passed a 1 (tough) · OUT auto-records Serve Error · Swing Out auto-records Hit Error · Pass 0 auto-records Pass Error</div>
+    </div>
+  </div>
+
+  <!-- ══ 6. BOTTOM CONTROLS ══════════════════════════════════════════════════ -->
+  <div class="bottom-controls">
+    <div class="bc-grid">
+
+      <div class="bc-group" style="width:100%;">
+        <div style="font-size:12px;color:#6b7280;font-style:italic;margin-bottom:6px;">To get started, add a team and roster below</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <div class="bc-label" style="margin:0;">Team</div>
+          <select id="teamSelect" class="bc-select"></select>
+          <button id="teamsBtn" type="button" class="bc-btn">Teams</button>
+          <button id="rosterBtn" type="button" class="bc-btn">Roster</button>
+        </div>
+      </div>
+
+      <div class="bc-group">
+        <div class="bc-label">Day</div>
+        <div class="bc-row">
+          <select id="daySelect" class="bc-select">
+            <option value="Day 1">Day 1</option>
+            <option value="Day 2">Day 2</option>
+            <option value="Day 3">Day 3</option>
+          </select>
+          <button id="addDayBtn" type="button" class="bc-btn">+Day</button>
+        </div>
+      </div>
+
+      <div class="bc-group">
+        <div class="bc-label">Match</div>
+        <div class="bc-row">
+          <select id="matchSelect" class="bc-select"></select>
+          <button id="addMatchBtn" type="button" class="bc-btn">+Match</button>
+        </div>
+      </div>
+
+      <div class="bc-group">
+        <div class="bc-label">Set</div>
+        <select id="setSelect" class="bc-select">
+          <option value="1">Set 1</option>
+          <option value="2">Set 2</option>
+          <option value="3">Set 3</option>
+        </select>
+      </div>
+
+      <div class="bc-group">
+        <div class="bc-label">View</div>
+        <select id="viewSelect" class="bc-select">
+          <option value="set">Current Set</option>
+          <option value="match">Current Match</option>
+          <option value="tournament" selected>Tournament Total</option>
+        </select>
+      </div>
+
+      <div class="bc-group">
+        <div class="bc-label">Mode</div>
+        <div id="modeToggle" class="segmented" role="group" aria-label="Stats mode">
+          <button id="modePlayer" type="button" class="seg-btn" aria-pressed="true">Player</button>
+          <button id="modeCoach" type="button" class="seg-btn" aria-pressed="false">Coach</button>
+        </div>
+      </div>
+
+      <div class="bc-group" style="flex:1;min-width:220px;">
+        <div class="bc-label">Export / Actions</div>
+        <div class="bc-row">
+          <input id="exportName" class="bc-input" placeholder="Save export as…" />
+          <button id="exportBtn" type="button" class="bc-btn primary">Export CSV</button>
+          <button id="rotationBtn" type="button" class="bc-btn" style="display:none">Rotation</button>
+          <button id="resetBtn" type="button" class="bc-btn danger">Reset</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Hidden mobile mirror elements (kept for JS sync compatibility) -->
+    <div style="display:none;">
+      <select id="mobileTeamSelect"></select>
+      <select id="mobileDaySelect">
+        <option value="Day 1">Day 1</option>
+        <option value="Day 2">Day 2</option>
+        <option value="Day 3">Day 3</option>
+      </select>
+      <select id="mobileMatchSelect"></select>
+      <select id="mobileSetSelect">
+        <option value="1">Set 1</option>
+        <option value="2">Set 2</option>
+        <option value="3">Set 3</option>
+      </select>
+      <select id="mobileViewSelect">
+        <option value="set">Current Set</option>
+        <option value="match">Current Match</option>
+        <option value="tournament" selected>Tournament Total</option>
+      </select>
+      <button id="mobileTeamsBtn"></button>
+      <button id="mobileRosterBtn"></button>
+      <button id="mobileAddDayBtn"></button>
+      <button id="mobileAddMatchBtn"></button>
+      <button id="mobileModePlayer" aria-pressed="true"></button>
+      <button id="mobileModeCoach" aria-pressed="false"></button>
+      <input id="mobileExportName" />
+      <button id="mobileExportBtn"></button>
+      <button id="mobileResetBtn"></button>
+    </div>
+  </div>
+
+  </div><!-- end page-wrap -->
+
+  <!-- ══ MODALS ══════════════════════════════════════════════════════════════ -->
+
+  <div id="pickerBackdrop" class="modal-backdrop hidden modal-backdrop-el" style="display:none" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="pickerTitle">Select Player</div>
+        <button id="pickerClose" type="button" class="icon-btn" aria-label="Close">✕</button>
+      </div>
+      <div id="pickerQuickBar" style="display:none;padding:10px 14px;background:#eff6ff;border-bottom:1px solid #bfdbfe;">
+        <button id="pickerQuickBtn" type="button" style="width:100%;padding:10px 14px;background:#1e3a8a;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;text-align:left;">
+          ⚡ <span id="pickerQuickLabel">Record for last player</span>
+        </button>
+        <div style="font-size:11px;color:#3b82f6;margin-top:6px;text-align:center;">— or tap a different player below —</div>
+      </div>
+      <div class="modal-body"><div id="playerGrid" class="player-grid"></div></div>
+      <div class="modal-footer"><button id="pickerCancel" type="button" class="btn secondary">Cancel</button></div>
+    </div>
+  </div>
+
+  <div id="rosterBackdrop" class="modal-backdrop hidden modal-backdrop-el" style="display:none" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modal-header"><div class="modal-title">Roster</div><button id="rosterClose" type="button" class="icon-btn" aria-label="Close">✕</button></div>
+      <div class="modal-body">
+        <form id="playerForm" class="form">
+          <input type="hidden" id="playerId" />
+          <div class="form-row">
+            <div class="field"><label>Player Name</label><input id="playerName" placeholder="Enter player name" required /></div>
+            <div class="field small"><label>Jersey #</label><input id="playerNumber" placeholder="Jersey number" inputmode="numeric" pattern="[0-9]*" type="number" min="0" max="99" /></div>
+            <div class="field small"><label>Position</label>
+              <select id="playerPos">
+                <option value="">— select —</option>
+                <option value="S">S — Setter</option>
+                <option value="OH1">OH1 — Outside Hitter 1</option>
+                <option value="OH2">OH2 — Outside Hitter 2</option>
+                <option value="MB1">MB1 — Middle Blocker 1</option>
+                <option value="MB2">MB2 — Middle Blocker 2</option>
+                <option value="LIB">LIB — Libero</option>
+                <option value="DS">DS — Defensive Specialist</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-actions"><button type="submit" class="btn">Save Player</button><button type="button" id="newPlayerBtn" class="btn secondary">New</button></div>
+        </form>
+        <div class="roster-list-wrap"><div class="roster-list-title">Current Roster</div><div id="rosterList" class="roster-list"></div></div>
+      </div>
+      <div class="modal-footer"><button id="rosterDone" type="button" class="btn secondary">Done</button></div>
+    </div>
+  </div>
+
+  <div id="teamsBackdrop" class="modal-backdrop hidden modal-backdrop-el" style="display:none" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modal-header"><div class="modal-title">Teams</div><button id="teamsClose" type="button" class="icon-btn" aria-label="Close">✕</button></div>
+      <div class="modal-body">
+        <form id="teamForm" class="form">
+          <input type="hidden" id="teamId" />
+          <div class="form-row"><div class="field"><label>Team Name</label><input id="teamName" placeholder="Enter team name" required /></div></div>
+          <div class="form-actions">
+            <button type="submit" class="btn">Save Team</button>
+            <button type="button" id="newTeamBtn" class="btn secondary">New</button>
+            <button type="button" id="exportTeamBtn" class="btn secondary">Export Team</button>
+            <button type="button" id="importTeamBtn" class="btn secondary">Import Team</button>
+            <input id="importTeamInput" type="file" accept="application/json" style="display:none" />
+          </div>
+        </form>
+        <div class="roster-list-wrap"><div class="roster-list-title">Your Teams (local to this device)</div><div id="teamsList" class="roster-list"></div></div>
+      </div>
+      <div class="modal-footer"><button id="teamsDone" type="button" class="btn secondary">Done</button></div>
+    </div>
+  </div>
+
+  <div id="rotationBackdrop" class="modal-backdrop hidden modal-backdrop-el" style="display:none" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modal-header"><div class="modal-title">Rotation (Coach)</div><button id="rotationClose" type="button" class="icon-btn" aria-label="Close">✕</button></div>
+      <div class="modal-body">
+        <div id="rotationStatusBar" style="text-align:center;font-weight:900;font-size:15px;border-radius:10px;padding:7px 14px;margin-bottom:10px;transition:background .3s,color .3s;">🟢 Serving</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:6px 0 10px;">
+          <div>
+            <label style="font-weight:900;color:#374151;font-size:12px;">Setter Position</label>
+            <select id="setterPosSelect" style="width:auto;margin-left:8px;">
+              <option value="">—</option>
+              <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+              <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+            </select>
+          </div>
+          <div style="font-size:12px;color:#6b7280;">Server = Pos 1 (auto)</div>
+        </div>
+        <div id="rotationWheel" class="rotation-wheel" aria-label="Rotation wheel"></div>
+        <div style="font-size:12px;color:#6b7280;margin-top:6px;">Tap a position to assign a player. (Pos 1 is the server.)</div>
+      </div>
+      <div class="modal-footer"><button id="rotationClear" type="button" class="btn secondary">Clear</button><button id="rotationDone" type="button" class="btn">Done</button></div>
+    </div>
+  </div>
+
+  <div id="exportConfirmBackdrop" class="modal-backdrop hidden modal-backdrop-el" style="display:none" role="dialog" aria-modal="true" aria-labelledby="exportConfirmTitle">
+    <div class="modal">
+      <div class="modal-header"><div class="modal-title" id="exportConfirmTitle">Confirm Export</div><button id="exportConfirmClose" type="button" class="icon-btn" aria-label="Close">✕</button></div>
+      <div class="modal-body">
+        <div class="confirm-grid">
+          <div class="confirm-row"><div class="confirm-label">File</div><div id="exportConfirmFile" class="confirm-value"></div></div>
+          <div class="confirm-row"><div class="confirm-label">Team</div><div id="exportConfirmTeam" class="confirm-value"></div></div>
+          <div class="confirm-row"><div class="confirm-label">View</div><div id="exportConfirmView" class="confirm-value"></div></div>
+          <div class="confirm-row"><div class="confirm-label">Scope</div><div id="exportConfirmScope" class="confirm-value"></div></div>
+        </div>
+        <div class="confirm-note">Select "Export" to download, or "Cancel" to abort.</div>
+      </div>
+      <div class="modal-footer"><button id="exportConfirmCancel" type="button" class="btn secondary">Cancel</button><button id="exportConfirmOk" type="button" class="btn">Export</button></div>
+    </div>
+  </div>
+
+  <div id="resetConfirmBackdrop" class="modal-backdrop hidden modal-backdrop-el" style="display:none" role="dialog" aria-modal="true" aria-labelledby="resetConfirmTitle">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="resetConfirmTitle">Confirm Reset</div>
+        <button id="resetConfirmClose" type="button" class="icon-btn" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="confirm-grid">
+          <div class="confirm-row"><div class="confirm-label">Team</div><div id="resetConfirmTeam" class="confirm-value"></div></div>
+          <div class="confirm-row"><div class="confirm-label">What resets</div><div id="resetConfirmScope" class="confirm-value"></div></div>
+          <div class="confirm-row"><div class="confirm-label">Rotation</div><div id="resetConfirmRotation" class="confirm-value"></div></div>
+        </div>
+        <div class="confirm-note" style="margin-top:10px;"><strong>Reminder:</strong> Export CSV first if you want to keep a copy of your stats.</div>
+      </div>
+      <div class="modal-footer" style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
+        <button id="resetConfirmExport" type="button" class="btn secondary">Export CSV</button>
+        <button id="resetConfirmCancel" type="button" class="btn secondary">Cancel</button>
+        <button id="resetConfirmOk" type="button" class="btn danger">Reset Stats</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="editBackdrop" class="modal-backdrop hidden modal-backdrop-el" style="display:none" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
+    <div class="modal" style="max-height:85vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <div class="modal-title" id="editModalTitle">Edit Stats — tap any counter to subtract 1</div>
+        <button id="editClose" type="button" class="icon-btn" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;flex:1;" id="editGrid"></div>
+      <div class="modal-footer"><button id="editDone" type="button" class="btn secondary">Done</button></div>
+    </div>
+  </div>
+
+  <script>
+    function loginSwitchTab(tab) {
+      document.getElementById('loginPanelSignin').classList.toggle('active', tab==='signin');
+      document.getElementById('loginPanelCreate').classList.toggle('active', tab==='create');
+      document.getElementById('loginTabSignin').classList.toggle('active', tab==='signin');
+      document.getElementById('loginTabCreate').classList.toggle('active', tab==='create');
+      document.getElementById('loginError').classList.remove('visible');
+    }
+  </script>
+  <script type="module" src="app.js?v=0.1.58"></script>
+</body>
+</html>

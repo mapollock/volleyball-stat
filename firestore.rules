@@ -1,0 +1,109 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Super-admin: verified email only
+    function isAdmin() {
+      return isSignedIn()
+        && request.auth.token.email == 'alan.pollock@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Live session registry entry exists for this coach (enables cross-coach sync)
+    function hasLiveSession(userId) {
+      return exists(/databases/$(database)/documents/volleystat_sessions/$(userId));
+    }
+
+    function canReadUserData(userId) {
+      return isSignedIn() && (
+        request.auth.uid == userId
+        || isAdmin()
+        || hasLiveSession(userId)
+      );
+    }
+
+    function validStateWrite() {
+      return request.resource.data.keys().hasOnly(['data', 'updatedAt', 'forkedFrom', 'forkedAt'])
+        && request.resource.data.data is string
+        && request.resource.data.data.size() < 1500000
+        && request.resource.data.updatedAt is number;
+    }
+
+    function sessionCreateOwned() {
+      return request.resource.data.userId == request.auth.uid
+        && request.resource.data.userEmail == request.auth.token.email;
+    }
+
+    function sessionUpdateOwned() {
+      return resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.userEmail == request.auth.token.email;
+    }
+
+    function sessionDeleteAllowed() {
+      return resource.data.userId == request.auth.uid
+        || resource.data.get('sharedWith', '') == request.auth.token.email;
+    }
+
+    function validShareCreate() {
+      return request.resource.data.keys().hasAll(['token', 'userId', 'userEmail', 'type', 'scope', 'createdAt'])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.userEmail == request.auth.token.email
+        && request.resource.data.token is string
+        && request.resource.data.token.size() <= 32
+        && request.resource.data.createdAt is number;
+    }
+
+    match /users/{userId}/data/{document} {
+      allow read: if canReadUserData(userId);
+      allow create, update: if (isOwner(userId) || isAdmin()) && validStateWrite();
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    match /users/{userId}/sessions/{document} {
+      allow read, write: if isOwner(userId) || isAdmin();
+    }
+
+    match /users/{userId}/archives/{document} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create, update: if (isOwner(userId) || isAdmin())
+        && request.resource.data.data is string
+        && request.resource.data.data.size() < 1500000
+        && request.resource.data.archivedAt is number;
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    match /shares/{shareToken} {
+      // Recipients open a specific token URL; listing all shares is blocked
+      allow get: if isSignedIn();
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && (validShareCreate() || isAdmin());
+      allow update: if false;
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    match /volleystat_sessions/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && (isAdmin() || sessionCreateOwned());
+      allow update: if isSignedIn() && (isAdmin() || sessionUpdateOwned());
+      allow delete: if isSignedIn() && (isAdmin() || sessionDeleteAllowed());
+    }
+
+    // Legacy collection — no longer used; deny all access
+    match /volleystat_data/{deviceId} {
+      allow read, write: if false;
+    }
+
+    match /admin_grants/{grantId} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

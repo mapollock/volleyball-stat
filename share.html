@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <meta name="theme-color" content="#1e3a8a"/>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml"/>
+  <title>VolleyStat — Shared Stats</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#f0f2f5;color:#111827;}
+    .header{background:#1e3a8a;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+    .header-title{color:#fff;font-size:16px;font-weight:900;}
+    .header-sub{color:rgba(255,255,255,.6);font-size:12px;margin-top:2px;}
+    .badge{background:rgba(255,255,255,.15);color:#fff;border-radius:20px;padding:4px 12px;font-size:11px;font-weight:700;}
+    .wrap{max-width:1012px;margin:0 auto;padding:12px;}
+    .info-card{background:#fff;border-radius:12px;padding:14px;margin-bottom:12px;border:1px solid #e5e7eb;}
+    .info-card h2{font-size:15px;font-weight:900;margin-bottom:4px;}
+    .info-card p{font-size:12px;color:#6b7280;}
+    .controls{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;align-items:flex-end;}
+    .ctrl{display:flex;flex-direction:column;gap:4px;}
+    .ctrl label{font-size:11px;font-weight:800;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;}
+    .ctrl select{border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-weight:700;background:#fff;font-size:13px;}
+    .table-wrap{background:#fff;border-radius:12px;border:1px solid #e5e7eb;overflow:auto;box-shadow:0 2px 8px rgba(0,0,0,.04);}
+    table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;min-width:700px;}
+    thead th{background:#fbfbfb;border-bottom:1px solid #e5e7eb;padding:9px 10px;text-align:right;white-space:nowrap;font-weight:800;}
+    thead th.left{text-align:left;}
+    tbody td{border-bottom:1px solid #e5e7eb;padding:9px 10px;text-align:right;}
+    tbody tr:nth-child(even){background:#fcfcfc;}
+    tbody td.left{text-align:left;}
+    .sticky-col{position:sticky;left:0;background:inherit;z-index:1;}
+    th.sticky-col{z-index:2;}
+    .hint{padding:10px 12px;color:#6b7280;font-size:11px;border-top:1px solid #e5e7eb;}
+    .loading{text-align:center;padding:40px;color:#6b7280;font-size:14px;}
+    .error-box{background:#fee2e2;color:#dc2626;border-radius:12px;padding:20px;text-align:center;margin:20px;}
+    .ro-badge{display:inline-block;background:#fef3c7;color:#92400e;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:800;}
+    .sign-out-btn{background:transparent;border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;}
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="header-title">🏐 VolleyStat <span class="ro-badge">READ ONLY</span></div>
+    <div class="header-sub" id="shareDesc">Shared stats view</div>
+  </div>
+  <button class="sign-out-btn" id="signOutBtn">Sign Out</button>
+</div>
+
+<div class="wrap">
+  <div id="loadingMsg" class="loading">Loading shared stats…</div>
+  <div id="errorBox" class="error-box" style="display:none;"></div>
+  <div id="mainContent" style="display:none;">
+    <div class="info-card">
+      <h2 id="shareTitle">Shared Stats</h2>
+      <p id="shareInfo"></p>
+    </div>
+
+    <div class="controls" id="viewControls" style="display:none;">
+      <div class="ctrl"><label>Day</label><select id="viewDay"></select></div>
+      <div class="ctrl"><label>Match</label><select id="viewMatch"></select></div>
+      <div class="ctrl"><label>Set</label>
+        <select id="viewSet">
+          <option value="all">All Sets</option>
+          <option value="1">Set 1</option>
+          <option value="2">Set 2</option>
+          <option value="3">Set 3</option>
+        </select>
+      </div>
+      <div class="ctrl"><label>View</label>
+        <select id="viewScope">
+          <option value="tournament" selected>Tournament Total</option>
+          <option value="match">Current Match</option>
+          <option value="set">Current Set</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table><thead id="tableHead"></thead><tbody id="tableBody"></tbody></table>
+      <div class="hint">Read-only view. Stats update live as the coach records them.</div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { onAuthReady, signOutUser, loadSharedData, forkSharedSession } from './firebase-sync.js';
+  import { getFirestore, doc, onSnapshot, initializeFirestore,
+           persistentLocalCache, persistentMultipleTabManager }
+    from 'https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js';
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js';
+
+  const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyBrF9-6bi_hCLxPI75_jfXmhY7NusA1mDk",
+    authDomain: "volleystat-5e650.firebaseapp.com",
+    projectId: "volleystat-5e650",
+    storageBucket: "volleystat-5e650.firebasestorage.app",
+    messagingSenderId: "180076488843",
+    appId: "1:180076488843:web:0eb2d012627523cdb54c8e"
+  };
+
+  const params = new URLSearchParams(window.location.search);
+  const token  = params.get('share');
+
+  if (!token) {
+    document.getElementById('loadingMsg').style.display = 'none';
+    document.getElementById('errorBox').style.display = 'block';
+    document.getElementById('errorBox').textContent = 'No share token provided.';
+  }
+
+  document.getElementById('signOutBtn').addEventListener('click', async function() {
+    await signOutUser();
+    window.location.href = 'login.html';
+  });
+
+  let shareData = null;
+  let liveState = null;
+
+  onAuthReady(async function(user) {
+    if (!user) { window.location.href = 'login.html?share=' + token; return; }
+
+    try {
+      const result = await loadSharedData(token);
+      shareData = result.share;
+      liveState = result.state;
+
+      // For full team shares — fork into recipient's account and redirect to main app
+      if (shareData.type === 'team') {
+        document.getElementById('loadingMsg').textContent = 'Setting up your session…';
+        try {
+          await forkSharedSession(token);
+          // Redirect to main app — recipient now has their own independent session
+          window.location.href = 'index.html?forked=1';
+          return;
+        } catch(forkErr) {
+          console.warn('Fork failed, showing read-only view:', forkErr.message);
+          // Fall through to read-only display if fork fails
+        }
+      }
+
+      // Show share info
+      const title = shareData.type === 'player'
+        ? 'Player Stats: ' + (shareData.playerName || 'Player')
+        : 'Team Stats: ' + shareData.teamName;
+      document.getElementById('shareTitle').textContent = title;
+      document.getElementById('shareDesc').textContent = shareData.teamName + ' · Shared by ' + shareData.userEmail;
+
+      const scopeText = shareData.scope === 'all' ? 'Full tournament'
+        : shareData.scope === 'day' ? shareData.day
+        : shareData.scope === 'match' ? shareData.day + ' · ' + shareData.match
+        : shareData.day + ' · ' + shareData.match + ' · Set ' + shareData.set;
+      document.getElementById('shareInfo').textContent = 'Scope: ' + scopeText + ' · Last updated live';
+
+      // Set up view controls if full team share
+      if (shareData.scope === 'all') {
+        document.getElementById('viewControls').style.display = 'flex';
+        populateDayMatch(liveState);
+      }
+
+      // Build table headers
+      buildHeaders(shareData.type === 'player');
+      renderTable(liveState);
+
+      document.getElementById('loadingMsg').style.display = 'none';
+      document.getElementById('mainContent').style.display = 'block';
+
+      // Live listener on the coach's data
+      const fbApp2 = initializeApp(FIREBASE_CONFIG, 'share-listener');
+      let db2;
+      try {
+        db2 = initializeFirestore(fbApp2, {
+          localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+        });
+      } catch(e) { db2 = getFirestore(fbApp2); }
+
+      onSnapshot(doc(db2, 'users', shareData.userId, 'data', 'state'), function(snap) {
+        if (!snap.exists()) return;
+        try {
+          liveState = JSON.parse(snap.data().data);
+          renderTable(liveState);
+        } catch(e) {}
+      });
+
+    } catch(e) {
+      document.getElementById('loadingMsg').style.display = 'none';
+      document.getElementById('errorBox').style.display = 'block';
+      document.getElementById('errorBox').textContent = 'Could not load shared stats: ' + e.message;
+    }
+  });
+
+  function populateDayMatch(state) {
+    const team = getTeam(state);
+    if (!team) return;
+    const dayEl   = document.getElementById('viewDay');
+    const matchEl = document.getElementById('viewMatch');
+    const days = ['Day 1','Day 2','Day 3'];
+    dayEl.innerHTML = days.map(d => `<option value="${d}">${d}</option>`).join('');
+    const matches = team.matches || ['Match 1','Match 2','Match 3'];
+    matchEl.innerHTML = matches.map(m => `<option value="${m}">${m}</option>`).join('');
+    dayEl.addEventListener('change', function(){ if(liveState) renderTable(liveState); });
+    matchEl.addEventListener('change', function(){ if(liveState) renderTable(liveState); });
+    document.getElementById('viewSet').addEventListener('change', function(){ if(liveState) renderTable(liveState); });
+    document.getElementById('viewScope').addEventListener('change', function(){ if(liveState) renderTable(liveState); });
+  }
+
+  function getTeam(state) {
+    if (!state || !state.teams || !state.teams.length) return null;
+    return state.teams.find(function(t){ return t.id === state.activeTeamId; }) || state.teams[0];
+  }
+
+  function buildHeaders(playerOnly) {
+    const head = document.getElementById('tableHead');
+    head.innerHTML = `<tr>
+      <th class="sticky-col left" style="background:#f9fafb;">Player</th>
+      <th style="background:#eff6ff;">Serve Att</th>
+      <th style="background:#eff6ff;">Serves In</th>
+      <th style="background:#eff6ff;">ACE</th>
+      <th style="background:#eff6ff;">Serve In%</th>
+      <th style="background:#dbeafe;border-left:2px solid #bfdbfe;">Srv/Rec Att</th>
+      <th style="background:#dbeafe;">Srv/Rec Avg</th>
+      <th style="background:#eff6ff;border-left:2px solid #bfdbfe;">Hit Att</th>
+      <th style="background:#eff6ff;">Hits In</th>
+      <th style="background:#eff6ff;">Kills</th>
+      <th style="background:#eff6ff;">Hit Avg</th>
+      <th style="background:#dbeafe;border-left:2px solid #bfdbfe;">Errors</th>
+    </tr>`;
+  }
+
+  function nz(v){ return (v===undefined||v===null)?0:v; }
+  function fmtPct(v){ return (v*100).toFixed(1)+'%'; }
+  function fmtNum(v,d){ return Number.isFinite(v)?v.toFixed(d):(0).toFixed(d); }
+
+  function getCounters(team, matchKey, set, playerId) {
+    return (((team.data||{})[matchKey]||{})[set]||{})[playerId] || {};
+  }
+
+  function derivePlayer(team, playerId, scope) {
+    const day   = document.getElementById('viewDay')   ? document.getElementById('viewDay').value   : 'Day 1';
+    const match = document.getElementById('viewMatch') ? document.getElementById('viewMatch').value : (team.matches&&team.matches[0])||'Match 1';
+    const set   = document.getElementById('viewSet')   ? document.getElementById('viewSet').value   : 'all';
+    const view  = document.getElementById('viewScope') ? document.getElementById('viewScope').value : 'tournament';
+    const matchKey = day + ' - ' + match;
+
+    const HIT_ACTIONS = ['swing','swingOut','kill'];
+    const ERR_ACTIONS = ['errHitting','errServing','errPassing','errNet','errTwoHand','errRotation'];
+
+    function addFrom(mk, s, agg) {
+      const c = getCounters(team, mk, s, playerId);
+      const keys = ['serve1','serve2','serve3','ace','serveOut','passToTarget','passNearTarget',
+                    'passAwayTarget','passShank','swing','swingOut','kill',
+                    'errHitting','errServing','errPassing','errNet','errTwoHand','errRotation'];
+      keys.forEach(function(k){ agg[k] = (agg[k]||0) + nz(c[k]); });
+    }
+
+    const agg = {};
+    if (view === 'set') {
+      addFrom(matchKey, set === 'all' ? '1' : set, agg);
+    } else if (view === 'match') {
+      ['1','2','3'].forEach(function(s){ addFrom(matchKey, s, agg); });
+    } else {
+      ['Day 1','Day 2','Day 3'].forEach(function(d) {
+        (team.matches||['Match 1','Match 2','Match 3']).forEach(function(m) {
+          ['1','2','3'].forEach(function(s){ addFrom(d+' - '+m, s, agg); });
+        });
+      });
+    }
+
+    const s1=nz(agg.serve1), s2=nz(agg.serve2), s3=nz(agg.serve3), ace=nz(agg.ace), out=nz(agg.serveOut);
+    const serveAtt = s1+s2+s3+ace+out;
+    const serveIn  = s1+s2+s3+ace;
+    const serveInPct = serveAtt ? serveIn/serveAtt : 0;
+    const passAtt = nz(agg.passToTarget)+nz(agg.passNearTarget)+nz(agg.passAwayTarget)+nz(agg.passShank);
+    const passPts = nz(agg.passToTarget)*3+nz(agg.passNearTarget)*2+nz(agg.passAwayTarget)*1;
+    const passAvg = passAtt ? passPts/passAtt : 0;
+    let hitAtt=0; HIT_ACTIONS.forEach(function(k){ hitAtt+=nz(agg[k]); });
+    const kills = nz(agg.kill);
+    const hitErrs = nz(agg.swingOut);
+    const hitAvg = hitAtt ? (kills-hitErrs)/hitAtt : 0;
+    let totalErrors=0; ERR_ACTIONS.forEach(function(k){ totalErrors+=nz(agg[k]); });
+
+    return { serveAtt, serveIn, serveInPct, aceCount:ace, passAtt, passAvg, hitAtt, kills, hitAvg, totalErrors };
+  }
+
+  function renderTable(state) {
+    const team = getTeam(state);
+    const body = document.getElementById('tableBody');
+    if (!team || !team.players || !team.players.length) {
+      body.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:20px;color:#6b7280;">No players in roster.</td></tr>';
+      return;
+    }
+
+    const players = (shareData && shareData.type === 'player')
+      ? team.players.filter(function(p){ return p.id === shareData.playerId; })
+      : team.players.slice().sort(function(a,b){
+          const na = parseInt(a.number)||999, nb = parseInt(b.number)||999;
+          return na-nb || (a.name||'').localeCompare(b.name||'');
+        });
+
+    body.innerHTML = '';
+    players.forEach(function(p) {
+      const d = derivePlayer(team, p.id);
+      const tr = document.createElement('tr');
+      function cell(text, cls, style) {
+        const td = document.createElement('td');
+        td.textContent = text;
+        if (cls) td.className = cls;
+        if (style) Object.assign(td.style, style);
+        return td;
+      }
+      tr.appendChild(cell((p.number?'#'+p.number+' ':'')+p.name, 'left sticky-col', {background:'#f9fafb'}));
+      tr.appendChild(cell(d.serveAtt, null, {background:'#eff6ff'}));
+      tr.appendChild(cell(d.serveIn,  null, {background:'#eff6ff'}));
+      tr.appendChild(cell(d.aceCount, null, {background:'#eff6ff'}));
+      const pctCell = cell(fmtPct(d.serveInPct), null, {background:'#eff6ff',fontWeight:'700'});
+      tr.appendChild(pctCell);
+      tr.appendChild(cell(d.passAtt, null, {background:'#dbeafe',borderLeft:'2px solid #bfdbfe'}));
+      const paCell = cell(fmtNum(d.passAvg,2), null, {background:'#dbeafe',fontWeight:'700'});
+      if (d.passAtt > 0) paCell.style.color = d.passAvg >= 2.5 ? '#16a34a' : d.passAvg < 2.0 ? '#dc2626' : '#d97706';
+      tr.appendChild(paCell);
+      tr.appendChild(cell(d.hitAtt, null, {background:'#eff6ff',borderLeft:'2px solid #bfdbfe'}));
+      tr.appendChild(cell(d.kills,  null, {background:'#eff6ff'}));
+      tr.appendChild(cell(d.kills,  null, {background:'#eff6ff'}));
+      const haCell = cell(fmtNum(d.hitAvg,3), null, {background:'#eff6ff',fontWeight:'700'});
+      if (d.hitAtt > 0) haCell.style.color = d.hitAvg >= 0.250 ? '#16a34a' : '#dc2626';
+      tr.appendChild(haCell);
+      const errCell = cell(d.totalErrors, null, {background:'#dbeafe',borderLeft:'2px solid #bfdbfe',fontWeight:'900'});
+      if (d.totalErrors > 0) errCell.style.color = '#dc2626';
+      tr.appendChild(errCell);
+      body.appendChild(tr);
+    });
+  }
+</script>
+</body>
+</html>
