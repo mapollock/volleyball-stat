@@ -71,3 +71,8 @@ node_modules/
 # macOS / editor junk
 .DS_Store
 .fuse_hidden*
+
+# Local backups and archives
+*.zip
+*backup*
+*BACKUP*
