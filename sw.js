@@ -1,5 +1,5 @@
-/* VolleyStat Service Worker v11 */
-var CACHE = 'volleystat-v17';
+/* VolleyStat Service Worker — pairs with APP_VERSION 0.1.143 */
+var CACHE = 'volleystat-v45';
 var ASSETS = [
   './',
   './login.html',
@@ -31,6 +31,7 @@ self.addEventListener('fetch', function(e){
   // Never cache these — always fetch fresh
   if (url.indexOf('app.js') >= 0) return;
   if (url.indexOf('firebase-sync.js') >= 0) return;
+  if (url.indexOf('sw.js') >= 0) return;
   if (url.indexOf('index.html') >= 0 || url.endsWith('/')) return;
   e.respondWith(
     caches.match(e.request).then(function(cached){

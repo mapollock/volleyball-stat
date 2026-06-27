@@ -84,20 +84,9 @@
 </div>
 
 <script type="module">
-  import { onAuthReady, signOutUser, loadSharedData, forkSharedSession } from './firebase-sync.js';
-  import { getFirestore, doc, onSnapshot, initializeFirestore,
-           persistentLocalCache, persistentMultipleTabManager }
+  import { onAuthReady, signOutUser, loadSharedData, forkSharedSession, getDb } from './firebase-sync.js?v=0.1.132';
+  import { doc, onSnapshot }
     from 'https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js';
-  import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js';
-
-  const FIREBASE_CONFIG = {
-    apiKey: "AIzaSyBrF9-6bi_hCLxPI75_jfXmhY7NusA1mDk",
-    authDomain: "volleystat-5e650.firebaseapp.com",
-    projectId: "volleystat-5e650",
-    storageBucket: "volleystat-5e650.firebasestorage.app",
-    messagingSenderId: "180076488843",
-    appId: "1:180076488843:web:0eb2d012627523cdb54c8e"
-  };
 
   const params = new URLSearchParams(window.location.search);
   const token  = params.get('share');
@@ -164,16 +153,8 @@
       document.getElementById('loadingMsg').style.display = 'none';
       document.getElementById('mainContent').style.display = 'block';
 
-      // Live listener on the coach's data
-      const fbApp2 = initializeApp(FIREBASE_CONFIG, 'share-listener');
-      let db2;
-      try {
-        db2 = initializeFirestore(fbApp2, {
-          localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-        });
-      } catch(e) { db2 = getFirestore(fbApp2); }
-
-      onSnapshot(doc(db2, 'users', shareData.userId, 'data', 'state'), function(snap) {
+      // Live listener on the coach's data (reuse main Firestore instance)
+      onSnapshot(doc(getDb(), 'users', shareData.userId, 'data', 'state'), function(snap) {
         if (!snap.exists()) return;
         try {
           liveState = JSON.parse(snap.data().data);

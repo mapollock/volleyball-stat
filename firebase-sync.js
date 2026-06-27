@@ -5,8 +5,7 @@
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js';
 import { getFirestore, doc, setDoc, getDoc, getDocs, deleteDoc,
-         collection, onSnapshot, initializeFirestore,
-         persistentLocalCache, query, where }
+         collection, onSnapshot, query, where }
   from 'https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js';
 import { getAuth, onAuthStateChanged, signOut,
          GoogleAuthProvider, signInWithPopup,
@@ -25,12 +24,11 @@ const FIREBASE_CONFIG = {
 // ── Init ──────────────────────────────────────────────────────────────────────
 const fbApp = initializeApp(FIREBASE_CONFIG);
 const auth  = getAuth(fbApp);
-let db;
-try {
-  db = initializeFirestore(fbApp, {
-    localCache: persistentLocalCache()
-  });
-} catch(e) { db = getFirestore(fbApp); }
+// Memory cache only — localStorage is the offline source of truth; avoids
+// IndexedDB persistence conflicts when multiple tabs/versions are open.
+const db = getFirestore(fbApp);
+
+export function getDb() { return db; }
 
 // ── Current user ──────────────────────────────────────────────────────────────
 let currentUser = null;
@@ -44,17 +42,91 @@ function userSessionsCol() {
   return collection(db, 'users', currentUser.uid, 'sessions');
 }
 
+function dataAccessRef(coachUserId, readerUserId) {
+  return doc(db, 'data_access', coachUserId + '_' + readerUserId);
+}
+
+function normalizeEmail(email) {
+  return (email || '').trim().toLowerCase();
+}
+
+const SUPER_ADMIN_EMAIL = 'alan.pollock@gmail.com';
+
+// Must match Firestore isAdmin() — verified email only.
+export function isSuperAdmin(user) {
+  const u = user || currentUser;
+  if (!u) return false;
+  return normalizeEmail(u.email) === normalizeEmail(SUPER_ADMIN_EMAIL) && u.emailVerified === true;
+}
+
+// Claim read access to a coach's data via a share link (validated by Firestore rules)
+export async function claimShareAccess(token) {
+  if (!currentUser) throw new Error('Not authenticated');
+  const shareSnap = await getDoc(doc(db, 'shares', token));
+  if (!shareSnap.exists()) throw new Error('Share not found or revoked');
+  const share = shareSnap.data();
+  const coachUserId = share.userId;
+  if (coachUserId === currentUser.uid) return;
+
+  const accessRef = dataAccessRef(coachUserId, currentUser.uid);
+  const existing = await getDoc(accessRef);
+  if (existing.exists()) return;
+
+  await setDoc(accessRef, {
+    coachUserId,
+    readerUserId: currentUser.uid,
+    readerEmail: currentUser.email || '',
+    shareToken: token,
+    via: 'share',
+    grantedAt: Date.now()
+  });
+}
+
+// Claim read access via an email invite (admin or coach email_grants)
+export async function ensureCoachDataAccess(coachUserId) {
+  if (!currentUser) throw new Error('Not authenticated');
+  if (coachUserId === currentUser.uid) return;
+  if (isSuperAdmin()) return;
+
+  const accessRef = dataAccessRef(coachUserId, currentUser.uid);
+  const existing = await getDoc(accessRef);
+  if (existing.exists()) return;
+
+  const email = normalizeEmail(currentUser.email);
+  if (!email) throw new Error('Your account has no email address for access verification.');
+
+  const grantsSnap = await getDocs(query(
+    collection(db, 'users', coachUserId, 'email_grants'),
+    where('readerEmail', '==', email)
+  ));
+  if (grantsSnap.empty) {
+    throw new Error('You do not have access to this session. Ask the coach or an admin to grant access.');
+  }
+
+  const grantDoc = grantsSnap.docs[0];
+  await setDoc(accessRef, {
+    coachUserId,
+    readerUserId: currentUser.uid,
+    readerEmail: currentUser.email || '',
+    grantId: grantDoc.id,
+    via: 'admin',
+    grantedAt: Date.now()
+  });
+}
+
 // ── Status ────────────────────────────────────────────────────────────────────
 function setSyncStatus(status) {
   const el = document.getElementById('syncStatus');
   if (!el) return;
   const map = {
-    synced:  { text: '✓ Synced',     color: '#16a34a' },
-    saving:  { text: '↑ Saving...',  color: '#93c5fd' },
-    offline: { text: '⚡ Offline',   color: '#d97706' },
-    error:   { text: '⚠ Sync error', color: '#dc2626' },
-    nodb:    { text: '⚠ No database',color: '#f97316' },
-    auth:    { text: '🔒 Signing in…',color: '#93c5fd' }
+    synced:  { text: '✓ Synced',              color: '#16a34a' },
+    saving:  { text: '↑ Saving…',             color: '#93c5fd' },
+    local:   { text: '⚡ Saved locally',      color: '#d97706' },
+    offline: { text: '⚡ Offline',            color: '#d97706' },
+    pending: { text: '↑ Sync pending…',       color: '#fbbf24' },
+    error:   { text: '⚠ Sync error',          color: '#dc2626' },
+    nodb:    { text: '⚠ No database',         color: '#f97316' },
+    auth:    { text: '🔒 Signing in…',       color: '#93c5fd' }
   };
   const s = map[status] || { text: status, color: '#93c5fd' };
   el.textContent = s.text;
@@ -91,30 +163,52 @@ export function getCurrentUser() { return currentUser; }
 // ── Save ──────────────────────────────────────────────────────────────────────
 let saveTimer = null;
 let lastSaved = null;
+let pendingState = null;
+const SAVE_DEBOUNCE_MS = 800;
+
+async function writeState(stateObj) {
+  await setDoc(userDataRef(), {
+    data: JSON.stringify(stateObj),
+    updatedAt: Date.now()
+  }, { merge: true });
+  lastSaved = Date.now();
+  setSyncStatus('synced');
+  const team = stateObj && stateObj.teams && stateObj.teams.length
+    ? (stateObj.teams.find(function(t){ return t.id === stateObj.activeTeamId; }) || stateObj.teams[0])
+    : null;
+  if (team && team.name) registerSession(team.name);
+}
+
+export async function flushFirebaseSave() {
+  if (!currentUser || !pendingState) return;
+  clearTimeout(saveTimer);
+  setSyncStatus('saving');
+  try {
+    await writeState(pendingState);
+    pendingState = null;
+  } catch(e) {
+    console.error('[VolleyStat] Flush save error:', e);
+    if (!navigator.onLine) setSyncStatus('local');
+    else setSyncStatus('error');
+  }
+}
 
 export function firebaseSave(stateObj) {
   if (!currentUser) return;
+  pendingState = stateObj;
   clearTimeout(saveTimer);
-  setSyncStatus('saving');
+  if (navigator.onLine) setSyncStatus('saving');
+  else setSyncStatus('local');
   saveTimer = setTimeout(async function() {
     try {
-      await setDoc(userDataRef(), {
-        data: JSON.stringify(stateObj),
-        updatedAt: Date.now()
-      }, { merge: true });
-      lastSaved = Date.now();
-      setSyncStatus('synced');
-      // Register session
-      const team = stateObj && stateObj.teams && stateObj.teams.length
-        ? (stateObj.teams.find(function(t){ return t.id === stateObj.activeTeamId; }) || stateObj.teams[0])
-        : null;
-      if (team && team.name) registerSession(team.name);
+      await writeState(stateObj);
+      pendingState = null;
     } catch(e) {
       console.error('[VolleyStat] Save error:', e);
-      if (!navigator.onLine) setSyncStatus('offline');
+      if (!navigator.onLine) setSyncStatus('local');
       else setSyncStatus('error');
     }
-  }, 1500);
+  }, SAVE_DEBOUNCE_MS);
 }
 
 // ── Load ──────────────────────────────────────────────────────────────────────
@@ -191,7 +285,6 @@ export async function registerSession(teamName) {
 export async function listSessions() {
   if (!currentUser) return [];
   try {
-    // Read from shared collection — all users' sessions visible here
     const snap = await getDocs(collection(db, 'volleystat_sessions'));
     const sessions = [];
     snap.forEach(function(d) {
@@ -202,7 +295,11 @@ export async function listSessions() {
     sessions.sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
     return sessions;
   } catch(e) {
-    console.warn('[VolleyStat] listSessions error:', e.message);
+    if (isSuperAdmin()) {
+      console.warn('[VolleyStat] listSessions error (super-admin):', e.message);
+    } else {
+      console.warn('[VolleyStat] listSessions error:', e.message);
+    }
     return [];
   }
 }
@@ -231,7 +328,7 @@ export async function createShare(opts) {
     createdAt: Date.now()
   };
   await setDoc(doc(db, 'shares', token), shareData);
-  // Ensure session registry exists so share recipients can read coach data per security rules
+  // Session registry for sync UI (read access is granted separately via share claim)
   await setDoc(doc(db, 'volleystat_sessions', currentUser.uid), {
     userId: currentUser.uid,
     userEmail: currentUser.email || '',
@@ -264,6 +361,7 @@ export async function loadSharedData(token) {
   const shareSnap = await getDoc(doc(db, 'shares', token));
   if (!shareSnap.exists()) throw new Error('Share not found or revoked');
   const share = shareSnap.data();
+  await claimShareAccess(token);
   const dataSnap = await getDoc(doc(db, 'users', share.userId, 'data', 'state'));
   if (!dataSnap.exists()) throw new Error('No data found');
   const state = JSON.parse(dataSnap.data().data);
@@ -279,6 +377,8 @@ export async function forkSharedSession(token) {
   const shareSnap = await getDoc(doc(db, 'shares', token));
   if (!shareSnap.exists()) throw new Error('Share link not found or has been revoked');
   const share = shareSnap.data();
+
+  await claimShareAccess(token);
 
   // Load source data from coach's account
   const dataSnap = await getDoc(doc(db, 'users', share.userId, 'data', 'state'));
@@ -306,7 +406,7 @@ export async function forkSharedSession(token) {
 // Load data from another user's session
 export async function firebaseLoadFrom(targetUserId) {
   try {
-    // Try user-based path first
+    await ensureCoachDataAccess(targetUserId);
     const targetRef = doc(db, 'users', targetUserId, 'data', 'state');
     const snap = await getDoc(targetRef);
     if (snap.exists()) {
@@ -322,7 +422,8 @@ export async function firebaseLoadFrom(targetUserId) {
 
 // Listen to another user's data (read-only view of their session)
 let unsubscribeOther = null;
-export function firebaseListenTo(targetUserId, onUpdate) {
+export async function firebaseListenTo(targetUserId, onUpdate) {
+  await ensureCoachDataAccess(targetUserId);
   if (unsubscribeOther) unsubscribeOther();
   const targetRef = doc(db, 'users', targetUserId, 'data', 'state');
   unsubscribeOther = onSnapshot(targetRef,
@@ -335,8 +436,20 @@ export function firebaseListenTo(targetUserId, onUpdate) {
   return unsubscribeOther;
 }
 
-window.addEventListener('online',  function() { setSyncStatus('synced'); });
-window.addEventListener('offline', function() { setSyncStatus('offline'); });
+window.addEventListener('online', function() {
+  if (pendingState && currentUser) {
+    setSyncStatus('pending');
+    flushFirebaseSave();
+  } else {
+    setSyncStatus('synced');
+  }
+});
+window.addEventListener('offline', function() {
+  setSyncStatus(pendingState ? 'local' : 'offline');
+});
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'hidden') flushFirebaseSave();
+});
 
 
 
@@ -371,6 +484,7 @@ export async function archiveSession(stateObj, label) {
 }
 
 export async function loadArchive(userId, archiveId) {
+  await ensureCoachDataAccess(userId);
   const archiveRef = doc(db, 'users', userId, 'archives', archiveId);
   const snap = await getDoc(archiveRef);
   if (!snap.exists()) throw new Error('Archive not found');
@@ -393,8 +507,9 @@ export async function deleteArchive(userId, archiveId) {
   try { await deleteDoc(doc(db, 'volleystat_sessions', sessionId)); } catch(e) {}
 }
 
-// ── Admin: load ALL sessions across all users ────────────────────────────────
+// ── Super-admin: load ALL sessions across all users ──────────────────────────
 export async function adminLoadAllSessions() {
+  if (!isSuperAdmin()) throw new Error('Super-admin access required');
   const colRef = collection(db, 'volleystat_sessions');
   const snap = await getDocs(colRef);
   return snap.docs.map(function(d) {
@@ -402,8 +517,9 @@ export async function adminLoadAllSessions() {
   }).sort(function(a, b) { return (b.ts || 0) - (a.ts || 0); });
 }
 
-// ── Admin: load state for any user ──────────────────────────────────────────
+// ── Super-admin: load state for any user ─────────────────────────────────────
 export async function adminLoadUserState(userId) {
+  if (!isSuperAdmin()) throw new Error('Super-admin access required');
   const ref = doc(db, 'users', userId, 'data', 'state');
   const snap = await getDoc(ref);
   if (!snap.exists()) throw new Error('No state found for user ' + userId);
@@ -412,31 +528,43 @@ export async function adminLoadUserState(userId) {
   return JSON.parse(raw);
 }
 
-// ── Admin: write state to any user ──────────────────────────────────────────
+// ── Super-admin: write state to any user ─────────────────────────────────────
 export async function adminWriteUserState(userId, stateObj) {
+  if (!isSuperAdmin()) throw new Error('Super-admin access required');
   const ref = doc(db, 'users', userId, 'data', 'state');
   await setDoc(ref, { data: JSON.stringify(stateObj), updatedAt: Date.now() }, { merge: true });
 }
 
-// ── Admin: grant a user access to a specific session (by copying it to their space) ──
+// ── Super-admin: grant a user access to a specific session ───────────────────
 export async function adminGrantSessionAccess(targetEmail, sessionDocId) {
-  // Record the grant in admin_grants
-  const grantId = 'grant_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-  await setDoc(doc(db, 'admin_grants', grantId), {
+  if (!isSuperAdmin()) throw new Error('Super-admin access required');
+  const adminGrantId = 'grant_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+  await setDoc(doc(db, 'admin_grants', adminGrantId), {
     targetEmail: targetEmail,
     sessionDocId: sessionDocId,
     grantedBy: currentUser ? currentUser.email : 'admin',
     grantedAt: Date.now()
   });
-  // Copy the session entry so it shows in the target user's session list
   const sessionSnap = await getDoc(doc(db, 'volleystat_sessions', sessionDocId));
   if (!sessionSnap.exists()) throw new Error('Session not found');
   const sessionData = sessionSnap.data();
-  const sharedId = 'shared_' + sessionDocId + '_to_' + targetEmail.replace(/[@.]/g, '_');
+  const coachUserId = sessionData.userId || sessionDocId.split('_archive_')[0];
+  const normalizedEmail = normalizeEmail(targetEmail);
+  if (!normalizedEmail) throw new Error('Invalid email address');
+
+  const emailGrantId = 'grant_' + Date.now();
+  await setDoc(doc(db, 'users', coachUserId, 'email_grants', emailGrantId), {
+    readerEmail: normalizedEmail,
+    grantedAt: Date.now(),
+    grantedBy: currentUser ? currentUser.email : 'admin',
+    via: 'admin'
+  });
+
+  const sharedId = 'shared_' + sessionDocId + '_to_' + normalizedEmail.replace(/[@.]/g, '_');
   await setDoc(doc(db, 'volleystat_sessions', sharedId), Object.assign({}, sessionData, {
-    sharedWith: targetEmail,
+    sharedWith: normalizedEmail,
     sharedBy: currentUser ? currentUser.email : 'admin',
     label: '🔗 ' + (sessionData.label || sessionData.teamName || sessionDocId)
   }));
-  return grantId;
+  return adminGrantId;
 }

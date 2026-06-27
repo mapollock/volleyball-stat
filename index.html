@@ -52,21 +52,61 @@
     .rotation-row{display:flex;justify-content:space-around;align-items:center;padding:12px 8px;width:100%;box-sizing:border-box;}
     .rotation-row.front{background:rgba(255,255,255,.45);}
     .rotation-row.back{background:rgba(255,255,255,.25);}
-    /* Circle icon */
-    .rot-circle-wrap{display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;padding:4px;border-radius:10px;transition:background .1s;}
-    .rot-circle-wrap:active{background:rgba(0,0,0,.08);}
-    .rot-circle{width:62px;height:62px;border-radius:50%;border:3px solid #e5e7eb;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.1);transition:border-color .15s,background .15s;flex-shrink:0;}
-    .rot-circle .rot-abbr{font-size:12px;font-weight:900;line-height:1;letter-spacing:.02em;}
-    .rot-circle .rot-num{font-size:10px;font-weight:700;color:#6b7280;margin-top:1px;}
-    .rot-circle-name{font-size:10px;font-weight:800;color:#374151;text-align:center;max-width:70px;line-height:1.2;word-break:break-word;}
+    /* Volleyball player icon */
+    .rot-circle-wrap{display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px;border-radius:10px;user-select:none;touch-action:manipulation;}
+    .rot-volleyball{width:68px;height:68px;border-radius:50%;border:3px solid #cbd5e1;background-color:#fffef5;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23fffef5'/%3E%3Cpath d='M32 2c8 10 8 22 0 30M32 2c-8 10-8 22 0 30M2 32c10 8 22 8 30 0M2 32c10-8 22-8 30 0' stroke='%23cbd5e1' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 14c12 4 20 14 24 26M56 14C44 18 36 28 32 40M8 50c12-4 20-14 24-26M56 50C44 46 36 36 32 24' stroke='%23e2e8f0' stroke-width='1.2' fill='none'/%3E%3C/svg%3E");background-size:cover;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;box-shadow:0 2px 10px rgba(0,0,0,.12);transition:border-color .15s,box-shadow .15s;flex-shrink:0;position:relative;}
+    .rot-volleyball .rot-pos-label{font-size:11px;font-weight:900;line-height:1;letter-spacing:.02em;text-align:center;}
+    .rot-volleyball .rot-ball-num{font-size:10px;font-weight:800;line-height:1;text-align:center;}
+    .rot-player-name{font-size:10px;font-weight:800;color:#1f2937;text-align:center;max-width:78px;line-height:1.2;word-break:break-word;}
+    .rot-player-name .rot-base-pos{color:#dc2626;font-weight:900;}
     .rot-circle-posnum{font-size:9px;font-weight:700;color:#9ca3af;text-align:center;}
-    /* Server slot highlight */
-    .rot-circle-wrap.is-server .rot-circle{border-color:#16a34a;background:#dcfce7;box-shadow:0 0 0 3px rgba(22,163,74,.2);}
-    /* Libero active highlight */
-    .rot-circle-wrap.is-libero .rot-circle{border-color:#f59e0b;background:#fffbeb;}
-    /* Empty slot */
-    .rot-circle-wrap.is-empty .rot-circle{border-style:dashed;border-color:#d1d5db;background:#f9fafb;}
-    .rot-circle-wrap.is-empty .rot-abbr{color:#d1d5db;}
+    .rot-circle-wrap.is-server .rot-volleyball{border-color:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.25);}
+    .rot-circle-wrap.is-libero .rot-volleyball{border-color:#d97706;box-shadow:0 0 0 3px rgba(217,119,6,.2);}
+    .rot-circle-wrap.is-empty .rot-volleyball{border-style:dashed;border-color:#d1d5db;background-color:#f9fafb;opacity:.85;}
+    .rot-circle-wrap.is-empty .rot-pos-label{color:#d1d5db;}
+    .rot-circle-wrap.is-sub-in .rot-volleyball{box-shadow:0 0 0 2px rgba(13,148,136,.35);}
+    .rot-circle-wrap.has-rules .rot-volleyball{box-shadow:0 0 0 2px rgba(30,58,138,.25);}
+    /* Per-player rules popover */
+    #rotationCourtWrap{position:relative;}
+    .rot-player-menu{position:absolute;z-index:20;display:none;min-width:200px;max-width:280px;max-height:70vh;overflow-y:auto;background:#fff;border:2px solid #1e3a8a;border-radius:12px;padding:10px 12px;box-shadow:0 8px 28px rgba(0,0,0,.18);}
+    .rot-player-menu.open{display:block;}
+    .rot-menu-title{font-size:12px;font-weight:900;color:#1e3a8a;margin-bottom:8px;line-height:1.3;}
+    .rot-menu-section{margin-top:8px;padding-top:8px;border-top:1px solid #e5e7eb;}
+    .rot-menu-section:first-of-type{margin-top:0;padding-top:0;border-top:none;}
+    .rot-menu-label{font-size:10px;font-weight:800;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;}
+    .rot-menu-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;font-size:12px;font-weight:700;color:#374151;}
+    .rot-menu-toggle{appearance:none;width:42px;height:24px;border-radius:12px;border:none;background:#d1d5db;position:relative;cursor:pointer;flex-shrink:0;padding:0;}
+    .rot-menu-toggle.on{background:#16a34a;}
+    .rot-menu-toggle::after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .15s;}
+    .rot-menu-toggle.on::after{transform:translateX(18px);}
+    .rot-menu-radios{display:flex;flex-direction:column;gap:5px;}
+    .rot-menu-radios label{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#374151;cursor:pointer;}
+    .rot-menu-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;}
+    .rot-menu-chip{appearance:none;border:1px solid #e5e7eb;background:#f9fafb;color:#374151;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;}
+    .rot-menu-chip.selected{background:#1e3a8a;color:#fff;border-color:#1e3a8a;}
+    .rot-menu-actions{margin-top:8px;display:flex;gap:6px;}
+    .rot-menu-actions button{flex:1;font-size:11px;font-weight:700;padding:6px 8px;border-radius:6px;border:1px solid #d1d5db;background:#f9fafb;cursor:pointer;}
+    .rot-menu-actions button.primary{background:#1e3a8a;color:#fff;border-color:#1e3a8a;}
+    .rot-menu-options{display:flex;flex-direction:column;gap:6px;}
+    .rot-menu-opt-btn{appearance:none;width:100%;text-align:left;border:2px solid #e5e7eb;background:#f9fafb;color:#1e3a8a;border-radius:8px;padding:8px 10px;font-size:12px;font-weight:800;cursor:pointer;}
+    .rot-menu-opt-btn.active{border-color:#1e3a8a;background:#eff6ff;}
+    .rot-menu-expand{margin:2px 0 8px;padding:0 2px;}
+    .rot-menu-expand-hint{font-size:10px;color:#6b7280;margin-bottom:6px;line-height:1.3;}
+    /* Set-base lineup card (ref lineup) */
+    #setBasePanel{display:none;margin:10px 0 14px;}
+    #setBasePanel.open{display:block;}
+    .set-base-hint{font-size:12px;color:#1e3a8a;font-weight:800;text-align:center;margin-bottom:8px;line-height:1.35;}
+    .set-base-slot{appearance:none;border:2px dashed #93c5fd;background:#fff;border-radius:12px;padding:8px 6px;min-width:88px;max-width:110px;cursor:pointer;touch-action:manipulation;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px;}
+    .set-base-slot:active{transform:scale(.97);}
+    .set-base-slot.filled{border-style:solid;border-color:#2563eb;background:#eff6ff;}
+    .set-base-slot .set-base-pos{font-size:10px;font-weight:900;color:#6b7280;letter-spacing:.04em;}
+    .set-base-slot .set-base-name{font-size:11px;font-weight:900;color:#1e3a8a;line-height:1.2;word-break:break-word;}
+    .set-base-slot .set-base-num{font-size:10px;font-weight:700;color:#6b7280;}
+    .set-base-slot.empty .set-base-name{color:#9ca3af;font-weight:700;}
+    #rotationCourtView.set-base-mode #rotationWheel{display:none;}
+    #rotationCourtView.set-base-mode #rotPlayerMenu{display:none!important;}
+    /* SR drag mode still uses .rot-circle alias */
+    .rot-circle{width:68px;height:68px;}
     /* Old class kept for SR mode compatibility */
     .rotation-wheel{margin:10px 0 14px;width:100%;}
     .rotation-wheel.sr-mode{display:grid;grid-template-columns:repeat(3,130px);grid-template-rows:repeat(2,85px);gap:12px;justify-content:center;}
@@ -265,7 +305,8 @@
     .icon-btn{border:none;background:transparent;font-size:18px;cursor:pointer;padding:6px 10px;border-radius:10px;}
     .icon-btn:hover{background:#f3f4f6;}
     .modal-body{padding:12px 14px;}
-    .modal-footer{padding:12px 14px;border-top:1px solid #e5e7eb;display:flex;justify-content:flex-end;gap:10px;}
+    .modal-footer{padding:12px 14px;border-top:1px solid #e5e7eb;display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;}
+    .modal-footer .btn,.modal-footer button{touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
     .player-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;}
     .player-btn{text-align:left;border:1px solid #e5e7eb;background:#fff;padding:12px;border-radius:12px;cursor:pointer;font-weight:800;font-size:14px;}
     .player-btn:hover{border-color:#93c5fd;background:#f0f9ff;}
@@ -453,7 +494,7 @@
       <h1>VolleyStat</h1>
       <div class="tagline">Live Courtside Analytics</div>
       <div class="title-bar-meta">
-        <span class="title-bar-badge">Alpha 0.1.125</span>
+        <span class="title-bar-badge">Alpha 0.1.143</span>
         <a href="quickstart.pdf" target="_blank">📄 Quick Start</a>
       </div>
     </div>
@@ -624,7 +665,7 @@
         </thead>
         <tbody id="statsBody"></tbody>
       </table>
-      <div id="hintText" class="hint">Button 1 = opponent passed a 3 (easy) · Button 3 = opponent passed a 1 (tough) · OUT auto-records Serve Error · Swing Out auto-records Hit Error · Pass 0 auto-records Pass Error</div>
+      <div id="hintText" class="hint">Serve In % = (1 + 2 + 3 + ACE) ÷ Serve Attempts. OUT is a serve attempt but not &quot;in&quot;.</div>
     </div>
   </div>
 
@@ -819,8 +860,20 @@
       </div>
       <div class="modal-body" style="overflow-y:auto;flex:1;">
         <div id="rotationStatusBar" style="text-align:center;font-weight:900;font-size:15px;border-radius:10px;padding:7px 14px;margin-bottom:10px;transition:background .3s,color .3s;cursor:pointer;user-select:none;" title="Tap to toggle who is serving">🟢 Serving</div>
-        <div style="font-size:12px;color:#6b7280;margin-bottom:8px;text-align:center;">Tap a circle to assign a player</div>
-        <div id="rotationWheel" class="rotation-wheel" aria-label="Rotation wheel"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+          <div id="rotationHint" style="font-size:12px;color:#6b7280;text-align:center;flex:1;">Double-tap a player for Sub · Auto-sub · Serving</div>
+          <span id="subCountDisplay" style="font-size:11px;font-weight:900;color:#1e3a8a;background:#eff6ff;border-radius:6px;padding:2px 10px;white-space:nowrap;">Subs: 0/15 (excl. libero)</span>
+        </div>
+        <div id="rotationCourtView">
+          <div id="rotationCourtWrap">
+            <div id="rotationWheel" class="rotation-wheel" aria-label="Rotation wheel"></div>
+            <div id="rotPlayerMenu" class="rot-player-menu" role="dialog" aria-label="Player rules"></div>
+          </div>
+          <div id="setBasePanel" aria-label="Set starting lineup">
+            <div class="set-base-hint">Tap each position to assign your starting lineup (like the ref lineup card).</div>
+            <div id="setBaseCourt" class="rotation-court"></div>
+          </div>
+        </div>
 
         <!-- Serve receive system toggle — shown when SRV RCV is on -->
         <div id="srSystemToggle" style="display:none;align-items:center;gap:8px;margin:6px 0 4px;flex-wrap:wrap;">
@@ -831,52 +884,20 @@
         </div>
         <div id="srViolationHint" style="display:none;background:#fee2e2;color:#dc2626;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:800;margin-top:4px;"></div>
 
-        <!-- Libero target picker — shown when both MBs are in back row -->
-        <div id="liberoPickerPanel" style="display:none;background:#fffbeb;border:2px solid #f59e0b;border-radius:10px;padding:10px;margin-top:8px;">
-          <div style="font-size:12px;font-weight:900;color:#92400e;margin-bottom:8px;">Replace which middle with Libero?</div>
-          <div style="display:flex;gap:8px;">
-            <button id="liberoPickMB1" type="button" class="btn secondary" style="flex:1;font-weight:900;">MB1</button>
-            <button id="liberoPickMB2" type="button" class="btn secondary" style="flex:1;font-weight:900;">MB2</button>
-          </div>
-        </div>
-
-        <!-- Sub panel — two-step substitution flow -->
-        <div id="subPanel" style="display:none;background:#f0f9ff;border:2px solid #38bdf8;border-radius:10px;padding:10px;margin-top:8px;">
-          <div id="subStep1">
-            <div style="font-size:12px;font-weight:900;color:#075985;margin-bottom:8px;">Step 1 — Select player coming IN:</div>
-            <div id="subBenchList"></div>
-            <button id="subCancel" type="button" class="btn secondary" style="width:100%;margin-top:4px;">Cancel</button>
-          </div>
-          <div id="subStep2" style="display:none;">
-            <div id="subStep2Title" style="font-size:12px;font-weight:900;color:#075985;margin-bottom:8px;">Step 2 — Select position to replace:</div>
-            <div id="subSlotList"></div>
-            <button id="subBack" type="button" class="btn secondary" style="width:100%;margin-top:4px;">← Back</button>
-          </div>
-        </div>
-
-        <!-- Auto-subs panel -->
-        <div id="autoSubsPanel" style="margin-top:10px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
-            <div style="font-size:12px;font-weight:900;color:#374151;">Auto Subs</div>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span id="subCountDisplay" style="font-size:12px;font-weight:900;color:#1e3a8a;background:#eff6ff;border-radius:6px;padding:2px 10px;">Subs: 0/6</span>
-              <label style="font-size:11px;font-weight:700;color:#6b7280;display:flex;align-items:center;gap:4px;cursor:pointer;">
-                <input type="checkbox" id="liberoMB2Toggle" checked style="cursor:pointer;"> Lib serves for MB2
-              </label>
-            </div>
-          </div>
-          <div id="autoSubsList" style="display:flex;flex-direction:column;gap:6px;"></div>
-          <div style="font-size:10px;color:#9ca3af;margin-top:4px;">Sub in at Pos 1 (default) or Pos 6 ☑. Always returns at Pos 4. MB1/MB2 excluded. 15 subs per set max. Libero free.</div>
-        </div>
       </div>
       <div class="modal-footer">
+        <span id="setBaseActions" style="display:none;gap:10px;flex:1;flex-wrap:wrap;">
+          <button id="setBaseReset" type="button" class="btn secondary" title="Restore saved base lineup">Reset</button>
+          <button id="setBaseCancel" type="button" class="btn secondary">Cancel</button>
+          <button id="setBaseSave" type="button" class="btn">Save Base</button>
+        </span>
         <span id="rotationCoachControls" style="display:flex;gap:10px;flex:1;">
           <button id="rotationClear" type="button" class="btn secondary">Set Base</button>
           <button id="rotationBack" type="button" class="btn secondary" title="Rotate back one position" style="font-size:18px;padding:8px 16px;">&#8594;</button>
-          <button id="rotationLibero" type="button" class="btn secondary" title="Swap libero in for MB" style="font-weight:900;letter-spacing:.03em;">LIB</button>
-          <button id="rotationSubBtn" type="button" class="btn secondary" title="Make a substitution" style="font-weight:900;letter-spacing:.03em;">SUB</button>
           <button id="rotationSRBtn" type="button" class="btn secondary" title="Toggle serve receive stacking view" style="font-weight:900;letter-spacing:.03em;">SRV RCV</button>
           <button id="rotationForward" type="button" class="btn secondary" title="Rotate forward one position" style="font-size:18px;padding:8px 16px;">&#8592;</button>
+          <button id="rotationReset" type="button" class="btn secondary" title="Back to Rot 1 starting lineup">Reset</button>
+          <button id="rotationLiberoBtn" type="button" class="btn secondary" title="Put libero on court for back-row middle">Libero In</button>
         </span>
         <button id="rotationDone" type="button" class="btn">Done</button>
       </div>
@@ -946,6 +967,6 @@
       document.getElementById('loginError').classList.remove('visible');
     }
   </script>
-  <script type="module" src="app.js?v=0.1.125"></script>
+  <script type="module" src="app.js?v=0.1.143"></script>
 </body>
 </html>

@@ -17,16 +17,22 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Live session registry entry exists for this coach (enables cross-coach sync)
-    function hasLiveSession(userId) {
-      return exists(/databases/$(database)/documents/volleystat_sessions/$(userId));
+    function accessDocId(coachUserId, readerUserId) {
+      return coachUserId + '_' + readerUserId;
+    }
+
+    // Explicit grant: data_access/{coachUid}_{readerUid}
+    function hasDataAccess(coachUserId) {
+      return isSignedIn()
+        && coachUserId != request.auth.uid
+        && exists(/databases/$(database)/documents/data_access/$(accessDocId(coachUserId, request.auth.uid)));
     }
 
     function canReadUserData(userId) {
       return isSignedIn() && (
         request.auth.uid == userId
         || isAdmin()
-        || hasLiveSession(userId)
+        || hasDataAccess(userId)
       );
     }
 
@@ -35,6 +41,14 @@ service cloud.firestore {
         && request.resource.data.data is string
         && request.resource.data.data.size() < 1500000
         && request.resource.data.updatedAt is number;
+    }
+
+    function validDataAccessGrant() {
+      return request.resource.data.keys().hasAll(['coachUserId', 'readerUserId', 'grantedAt', 'via'])
+        && request.resource.data.coachUserId is string
+        && request.resource.data.readerUserId is string
+        && request.resource.data.grantedAt is number
+        && request.resource.data.via in ['share', 'admin', 'coach'];
     }
 
     function sessionCreateOwned() {
@@ -50,7 +64,17 @@ service cloud.firestore {
 
     function sessionDeleteAllowed() {
       return resource.data.userId == request.auth.uid
-        || resource.data.get('sharedWith', '') == request.auth.token.email;
+        || resource.data.get('sharedWith', '') == request.auth.token.email
+        || isAdmin();
+    }
+
+    function canReadSession() {
+      return isSignedIn() && (
+        isAdmin()
+        || resource.data.userId == request.auth.uid
+        || resource.data.get('sharedWith', '') == request.auth.token.email
+        || hasDataAccess(resource.data.userId)
+      );
     }
 
     function validShareCreate() {
@@ -60,6 +84,13 @@ service cloud.firestore {
         && request.resource.data.token is string
         && request.resource.data.token.size() <= 32
         && request.resource.data.createdAt is number;
+    }
+
+    function validEmailGrant() {
+      return request.resource.data.keys().hasAll(['readerEmail', 'grantedAt'])
+        && request.resource.data.readerEmail is string
+        && request.resource.data.readerEmail.size() > 3
+        && request.resource.data.grantedAt is number;
     }
 
     match /users/{userId}/data/{document} {
@@ -73,7 +104,7 @@ service cloud.firestore {
     }
 
     match /users/{userId}/archives/{document} {
-      allow read: if isOwner(userId) || isAdmin();
+      allow read: if canReadUserData(userId);
       allow create, update: if (isOwner(userId) || isAdmin())
         && request.resource.data.data is string
         && request.resource.data.data.size() < 1500000
@@ -81,8 +112,19 @@ service cloud.firestore {
       allow delete: if isOwner(userId) || isAdmin();
     }
 
+    // Coach or admin invites a specific email to view this coach's data
+    match /users/{userId}/email_grants/{grantId} {
+      allow read: if isSignedIn() && (
+        isOwner(userId)
+        || isAdmin()
+        || request.auth.token.email == resource.data.readerEmail
+      );
+      allow create: if (isOwner(userId) || isAdmin()) && validEmailGrant();
+      allow delete: if isOwner(userId) || isAdmin();
+      allow update: if false;
+    }
+
     match /shares/{shareToken} {
-      // Recipients open a specific token URL; listing all shares is blocked
       allow get: if isSignedIn();
       allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow create: if isSignedIn() && (validShareCreate() || isAdmin());
@@ -90,14 +132,52 @@ service cloud.firestore {
       allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
-    match /volleystat_sessions/{docId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && (isAdmin() || sessionCreateOwned());
-      allow update: if isSignedIn() && (isAdmin() || sessionUpdateOwned());
-      allow delete: if isSignedIn() && (isAdmin() || sessionDeleteAllowed());
+    // Explicit read grants for cross-user data access (share claim or email invite)
+    match /data_access/{accessId} {
+      allow read: if isSignedIn() && (
+        isAdmin()
+        || request.auth.uid == resource.data.coachUserId
+        || request.auth.uid == resource.data.readerUserId
+      );
+
+      allow create: if isSignedIn() && validDataAccessGrant()
+        && accessId == accessDocId(request.resource.data.coachUserId, request.resource.data.readerUserId)
+        && request.resource.data.coachUserId != request.resource.data.readerUserId
+        && (
+          // Recipient claims access via a valid share link
+          (request.resource.data.readerUserId == request.auth.uid
+            && request.resource.data.via == 'share'
+            && request.resource.data.shareToken is string
+            && get(/databases/$(database)/documents/shares/$(request.resource.data.shareToken)).data.userId
+               == request.resource.data.coachUserId)
+          // Recipient redeems an email invite from the coach or admin
+          || (request.resource.data.readerUserId == request.auth.uid
+            && request.resource.data.via == 'admin'
+            && request.resource.data.grantId is string
+            && get(/databases/$(database)/documents/users/$(request.resource.data.coachUserId)
+                 /email_grants/$(request.resource.data.grantId)).data.readerEmail
+               == request.auth.token.email)
+          // Coach grants a specific user directly
+          || (request.resource.data.via == 'coach'
+            && request.resource.data.coachUserId == request.auth.uid)
+          // Admin creates any grant
+          || isAdmin()
+        );
+
+      allow delete: if isAdmin()
+        || request.auth.uid == resource.data.coachUserId
+        || request.auth.uid == resource.data.readerUserId;
+
+      allow update: if false;
     }
 
-    // Legacy collection — no longer used; deny all access
+    match /volleystat_sessions/{docId} {
+      allow read: if canReadSession();
+      allow create: if isSignedIn() && (isAdmin() || sessionCreateOwned());
+      allow update: if isSignedIn() && (isAdmin() || sessionUpdateOwned());
+      allow delete: if isSignedIn() && sessionDeleteAllowed();
+    }
+
     match /volleystat_data/{deviceId} {
       allow read, write: if false;
     }
