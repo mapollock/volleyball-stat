@@ -1375,12 +1375,7 @@ document.addEventListener('DOMContentLoaded', function(){
       errPassing: nz(c.errPassing,0),
       errNet: nz(c.errNet,0),
       errTwoHand: nz(c.errTwoHand,0),
-      errRotation: nz(c.errRotation,0),
-      dig: nz(c.dig,0),
-      digErr: nz(c.digErr,0),
-      blockKill: nz(c.blockKill,0),
-      blockErr: nz(c.blockErr,0),
-      oos: nz(c.oos,0)
+      errRotation: nz(c.errRotation,0)
     };
   }
 
@@ -1494,32 +1489,6 @@ document.addEventListener('DOMContentLoaded', function(){
       }
       tr.appendChild(hitAvgCell);
 
-      // ── DEFENSE columns (before errors) ──
-      var digCell = td(String(d.dig));
-      digCell.style.background='#e0f2fe'; digCell.style.borderLeft='2px solid #7dd3fc';
-      if (d.dig > 0) digCell.style.color='#0369a1';
-      tr.appendChild(digCell);
-
-      var digErrCell = td(String(d.digErr));
-      digErrCell.style.background='#e0f2fe';
-      if (d.digErr > 0) digErrCell.style.color='#dc2626';
-      tr.appendChild(digErrCell);
-
-      var blkKillCell = td(String(d.blockKill));
-      blkKillCell.style.background='#ede9fe'; blkKillCell.style.borderLeft='2px solid #c4b5fd';
-      if (d.blockKill > 0) blkKillCell.style.color='#6d28d9';
-      tr.appendChild(blkKillCell);
-
-      var blkErrCell = td(String(d.blockErr));
-      blkErrCell.style.background='#ede9fe';
-      if (d.blockErr > 0) blkErrCell.style.color='#dc2626';
-      tr.appendChild(blkErrCell);
-
-      var oosCell = td(String(d.oos));
-      oosCell.style.background='#fef9c3'; oosCell.style.borderLeft='2px solid #fde047';
-      if (d.oos > 0) oosCell.style.color='#854d0e';
-      tr.appendChild(oosCell);
-
       // ── ERROR columns ──
       var errTotCell = td(String(d.totalErrors));
       errTotCell.style.background='#dbeafe';
@@ -1547,8 +1516,7 @@ document.addEventListener('DOMContentLoaded', function(){
         passAtt:0, passPts:0, hitAtt:0, hitsIn:0, kills:0,
         aceCount:0, totalErrors:0,
         errHitting:0, errServing:0, errPassing:0,
-        errNet:0, errTwoHand:0, errRotation:0,
-        dig:0, digErr:0, blockKill:0, blockErr:0, oos:0
+        errNet:0, errTwoHand:0, errRotation:0
       };
       for (var ti=0; ti<players.length; ti++){
         var dd = derived(players[ti].id);
@@ -1570,11 +1538,6 @@ document.addEventListener('DOMContentLoaded', function(){
         totals.errNet     += dd.errNet;
         totals.errTwoHand += dd.errTwoHand;
         totals.errRotation+= dd.errRotation;
-        totals.dig        += dd.dig;
-        totals.digErr     += dd.digErr;
-        totals.blockKill  += dd.blockKill;
-        totals.blockErr   += dd.blockErr;
-        totals.oos        += dd.oos;
       }
       var serveInPctTot = totals.serveAtt ? totals.serveIn / totals.serveAtt : 0;
       var servePressurePctTot = totals.oppRecAtt ? totals.servePressureHits / totals.oppRecAtt : 0;
@@ -1635,13 +1598,6 @@ document.addEventListener('DOMContentLoaded', function(){
       tfoot.appendChild(ftd(String(totals.hitsIn), '#dde9ff'));
       tfoot.appendChild(ftd('', '#dde9ff'));
       tfoot.appendChild(ftd('', '#dde9ff'));
-
-      // Defense totals (before errors)
-      tfoot.appendChild(ftd(String(totals.dig),       '#bae6fd', {borderLeft:'2px solid #7dd3fc', color: totals.dig>0?'#0369a1':''}));
-      tfoot.appendChild(ftd(String(totals.digErr),    '#bae6fd', {color: totals.digErr>0?'#dc2626':''}));
-      tfoot.appendChild(ftd(String(totals.blockKill), '#ddd6fe', {borderLeft:'2px solid #c4b5fd', color: totals.blockKill>0?'#6d28d9':''}));
-      tfoot.appendChild(ftd(String(totals.blockErr),  '#ddd6fe', {color: totals.blockErr>0?'#dc2626':''}));
-      tfoot.appendChild(ftd(String(totals.oos),       '#fef08a', {borderLeft:'2px solid #fde047', color: totals.oos>0?'#854d0e':''}));
 
       // Error cols
       var errTot = ftd(String(totals.totalErrors), '#c7d8f8', {borderLeft:'2px solid #bfdbfe', color: totals.totalErrors>0?'#dc2626':''});
@@ -4050,7 +4006,6 @@ document.addEventListener('DOMContentLoaded', function(){
         'Svr In Play', 'Opp Passes', 'Aces', 'Svr Pressure %',
         'Pass Att', 'Recv Pressure',
         'Hit Att', 'Hit Avg', 'Hits In', 'Hits In%',
-        'Digs', 'Dig Errors', 'Block Kills', 'Block Errors', 'OOS',
         'Total Errors', 'Hit Errors', 'Serve Errors', 'Pass Errors', 'In the Net', 'Two Hand', 'Out of Rotation'
       ];
     } else {
@@ -4060,7 +4015,6 @@ document.addEventListener('DOMContentLoaded', function(){
         'Aces', 'Ace%',
         'Pass Att', 'Pass Avg',
         'Hit Att', 'Hit Avg', 'Hits In', 'Hits In%',
-        'Digs', 'Dig Errors', 'Block Kills', 'Block Errors', 'OOS',
         'Total Errors', 'Hit Errors', 'Serve Errors', 'Pass Errors', 'In the Net', 'Two Hand', 'Out of Rotation'
       ];
     }
@@ -4077,7 +4031,6 @@ document.addEventListener('DOMContentLoaded', function(){
           d.oppRecAtt, d.oppRecIn, d.aceCount, fmtPct(d.servePressurePct),
           d.passAtt, fmtNum(d.passAvg,2),
           d.hitAtt, fmtNum(d.hitAvg,3), d.hitsIn, fmtPct(d.hitsInPct),
-          d.dig, d.digErr, d.blockKill, d.blockErr, d.oos,
           d.totalErrors, d.errHitting, d.errServing, d.errPassing, d.errNet, d.errTwoHand, d.errRotation
         ].map(csv).join(','));
       } else {
@@ -4087,7 +4040,6 @@ document.addEventListener('DOMContentLoaded', function(){
           d.aceCount, fmtPct(d.acePctPlayer),
           d.passAtt, fmtNum(d.passAvg,2),
           d.hitAtt, fmtNum(d.hitAvg,3), d.hitsIn, fmtPct(d.hitsInPct),
-          d.dig, d.digErr, d.blockKill, d.blockErr, d.oos,
           d.totalErrors, d.errHitting, d.errServing, d.errPassing, d.errNet, d.errTwoHand, d.errRotation
         ].map(csv).join(','));
       }
