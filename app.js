@@ -10,7 +10,7 @@
  *   Manual +our score also triggers rotation when we didn't have the ball.
  */
 
-var APP_VERSION = '0.1.160';
+var APP_VERSION = '0.1.162';
 console.log('[VolleyStat] v' + APP_VERSION + ' loaded');
 
 var STORAGE_KEY = 'volleystat_v1'; // stable key — do not change between versions
@@ -550,55 +550,6 @@ function scoreKeyFromHistoryEntry(entry){
   return null;
 }
 
-function countSetStatEvents(setData){
-  var total = 0;
-  if (!setData) return 0;
-  for (var pid in setData){
-    if (!setData.hasOwnProperty(pid)) continue;
-    var c = setData[pid];
-    for (var k in c){
-      if (c.hasOwnProperty(k) && nz(c[k], 0) > 0) total += nz(c[k], 0);
-    }
-  }
-  return total;
-}
-
-function swapMatchSets(team, day, match, setA, setB){
-  setA = String(setA);
-  setB = String(setB);
-  if (setA === setB) return { ok:false, error:'Pick two different sets.' };
-  var matchKey = day + ' - ' + match;
-  normalizeTeam(team);
-  if (!team.data[matchKey]) team.data[matchKey] = { '1':{}, '2':{}, '3':{} };
-
-  var dataA = team.data[matchKey][setA] || {};
-  var dataB = team.data[matchKey][setB] || {};
-  team.data[matchKey][setA] = dataB;
-  team.data[matchKey][setB] = dataA;
-
-  var skA = scoreKeyFor(day, match, setA);
-  var skB = scoreKeyFor(day, match, setB);
-  var scA = scoreStore[skA] ? { our: scoreStore[skA].our || 0, opp: scoreStore[skA].opp || 0 } : { our:0, opp:0 };
-  var scB = scoreStore[skB] ? { our: scoreStore[skB].our || 0, opp: scoreStore[skB].opp || 0 } : { our:0, opp:0 };
-  scoreStore[skA] = scB;
-  scoreStore[skB] = scA;
-
-  if (team.history){
-    var tmp = '__swap_tmp__';
-    for (var i=0; i<team.history.length; i++){
-      var h = team.history[i];
-      if (h.match !== matchKey) continue;
-      if (h.set === setA) h.set = tmp;
-      else if (h.set === setB) h.set = setA;
-    }
-    for (var j=0; j<team.history.length; j++){
-      var h2 = team.history[j];
-      if (h2.match === matchKey && h2.set === tmp) h2.set = setB;
-    }
-  }
-  return { ok:true, matchKey:matchKey, setA:setA, setB:setB, scoreA:scB, scoreB:scA };
-}
-
 function isLiberoPosition(pos){
   var tok = normPosToken(pos);
   return tok === 'LIB' || tok === 'LIBERO' || tok === 'L';
@@ -675,11 +626,13 @@ function clearActiveAutoSub(team, baseSlot){
   delete team.rotation.autoSubOriginals[baseSlot];
 }
 
-// dblclick does not fire on iOS/Safari touch — detect two quick taps via pointerup/touchend.
+// dblclick does not fire on iOS/Safari touch — detect two quick taps via pointerup.
+// touchend is fallback only when pointerup did not run (skip duplicate iOS pointerup+touchend).
 function addDoubleTapListener(el, onDoubleTap){
   var lastTap = 0;
   var lastX = 0;
   var lastY = 0;
+  var lastPointerUpAt = 0;
   var DBL_MS = 450;
   var DBL_DIST = 36;
 
@@ -704,9 +657,11 @@ function addDoubleTapListener(el, onDoubleTap){
 
   el.addEventListener('pointerup', function(e){
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    lastPointerUpAt = Date.now();
     onTap(e.clientX, e.clientY, e);
   });
   el.addEventListener('touchend', function(e){
+    if (Date.now() - lastPointerUpAt < 400) return;
     if (!e.changedTouches || !e.changedTouches.length) return;
     var t = e.changedTouches[0];
     onTap(t.clientX, t.clientY, e);
@@ -1473,9 +1428,11 @@ document.addEventListener('DOMContentLoaded', function(){
 
   function clearPlayerSelectionForReceive(){
     activePlayerId = '';
-    var strip = byId('playerStripBtns');
-    if (strip) strip.querySelectorAll('button').forEach(function(b){ b.classList.remove('active'); });
-    renderUnifiedCourt();
+    if (byId('unifiedCourtGrid') && byId('unifiedCourtGrid').children.length){
+      patchUnifiedCourtSelection();
+    } else {
+      renderUnifiedCourt();
+    }
   }
 
   function syncSetSelectOptions(){
@@ -1737,8 +1694,106 @@ document.addEventListener('DOMContentLoaded', function(){
   // Rotation FAB — hidden when unified court is active (Rules button opens modal)
   function updateRotationFAB(){
     var fab = byId('rotationFAB');
-    if (!fab) return;
-    fab.style.display = 'none';
+    if (fab) fab.style.display = 'none';
+  }
+
+  var _lastActionDisplay = { text: '', isError: false };
+
+  function formatPlayerLabel(team, pid){
+    if (!team || !pid) return '—';
+    var players = team.players || [];
+    for (var i=0; i<players.length; i++){
+      if (players[i].id !== pid) continue;
+      var p = players[i];
+      return (p.number ? '#'+p.number+' ' : '') + firstName(p.name);
+    }
+    return '—';
+  }
+
+  function isErrorAction(action){
+    return action === 'serveOut' || action === 'swingOut' || action === 'passShank' ||
+      action === 'errPassing' || action === 'errNet' || action === 'errTwoHand' ||
+      action === 'errRotation';
+  }
+
+  function setLastActionDisplay(text, isError){
+    _lastActionDisplay = { text: text || '', isError: !!isError };
+    updateCourtStatusBar();
+  }
+
+  function refreshLastActionFromHistory(team){
+    if (!team || !team.history || !team.history.length){
+      setLastActionDisplay('', false);
+      return;
+    }
+    var matchKey = getMatchKey();
+    var set = setSelect ? setSelect.value : '1';
+    for (var i=team.history.length - 1; i>=0; i--){
+      var h = team.history[i];
+      if (h.auto) continue;
+      if (h.match !== matchKey || String(h.set) !== String(set)) continue;
+      setLastActionDisplay(
+        formatPlayerLabel(team, h.playerId) + ' · ' + prettyAction(h.action),
+        isErrorAction(h.action)
+      );
+      return;
+    }
+    setLastActionDisplay('', false);
+  }
+
+  function updateCourtStatusBar(){
+    var rec = byId('ucRecordingBar');
+    var last = byId('ucLastActionBar');
+    var team = activeTeam();
+    if (rec){
+      if (!team || !activePlayerId){
+        rec.textContent = 'Tap a player to record';
+        rec.className = 'uc-status-pill uc-recording empty';
+      } else {
+        rec.textContent = '▶ ' + formatPlayerLabel(team, activePlayerId);
+        rec.className = 'uc-status-pill uc-recording active';
+      }
+    }
+    if (last){
+      if (_lastActionDisplay.text){
+        last.textContent = 'Last: ' + _lastActionDisplay.text;
+        last.className = 'uc-status-pill uc-last' + (_lastActionDisplay.isError ? ' is-error' : '');
+      } else {
+        last.textContent = 'Last: —';
+        last.className = 'uc-status-pill uc-last';
+      }
+    }
+  }
+
+  function patchUnifiedCourtSelection(){
+    var team = activeTeam();
+    var grid = byId('unifiedCourtGrid');
+    if (grid && team){
+      var map = currentPosToPlayerId(team);
+      grid.querySelectorAll('.uc-slot').forEach(function(slot){
+        var pos = parseInt(slot.getAttribute('data-courtpos'), 10);
+        if (!pos) return;
+        var pid = map[pos];
+        slot.classList.toggle('active-slot', !!(pid && playerIdKey(pid) === playerIdKey(activePlayerId)));
+      });
+    }
+    var bench = byId('unifiedBenchRail');
+    if (bench && team){
+      bench.querySelectorAll('.player-pill').forEach(function(btn){
+        var pid = btn.dataset.pid;
+        var player = (team.players || []).find(function(p){ return p.id === pid; });
+        var isActive = pid && playerIdKey(pid) === playerIdKey(activePlayerId);
+        btn.classList.toggle('active', !!isActive);
+        if (player){
+          applyPlayerPillStyle(btn, player, {
+            bench: true,
+            active: isActive,
+            libero: isLiberoPlayer(team, pid)
+          });
+        }
+      });
+    }
+    updateCourtStatusBar();
   }
 
   function tryUnifiedCourtEntry(team, incomingId){
@@ -1808,11 +1863,10 @@ document.addEventListener('DOMContentLoaded', function(){
 
   function selectUnifiedPlayer(pid){
     activePlayerId = pid || '';
-    renderUnifiedCourt();
-    if (playerStripBtns){
-      playerStripBtns.querySelectorAll('button').forEach(function(b){
-        b.classList.toggle('active', b.dataset.pid === pid);
-      });
+    if (byId('unifiedCourtGrid') && byId('unifiedCourtGrid').children.length){
+      patchUnifiedCourtSelection();
+    } else {
+      renderUnifiedCourt();
     }
     if (pid && navigator.vibrate) navigator.vibrate(20);
   }
@@ -1893,11 +1947,6 @@ document.addEventListener('DOMContentLoaded', function(){
         e.stopPropagation();
         if (pid) selectUnifiedPlayer(pid);
       });
-      addDoubleTapListener(slot, function(e){
-        e.preventDefault();
-        e.stopPropagation();
-        openRotPlayerMenu(slot, pos);
-      });
 
       return slot;
     }
@@ -1950,10 +1999,10 @@ document.addEventListener('DOMContentLoaded', function(){
     if (libAuto){
       libAuto.checked = team.rotation.liberoAutoOnRotate !== false;
     }
+    updateCourtStatusBar();
   }
 
   function updateOnboardingAndControls(){
-    buildDesktopStrip();
     renderRotationStrip();
     updateRotationFAB();
     var team = activeTeam();
@@ -1991,8 +2040,6 @@ document.addEventListener('DOMContentLoaded', function(){
     setToolbarStatsEnabled(hasRoster);
 
     if (hasTeam) syncExportNameDefault();
-    var playerStripEl = byId('playerStrip');
-    if (playerStripEl) playerStripEl.style.display = 'none';
   }
 
   // Export confirm modal plumbing
@@ -2624,6 +2671,10 @@ document.addEventListener('DOMContentLoaded', function(){
                  action === 'errPassing' || action === 'errNet' || action === 'errTwoHand' ||
                  action === 'errRotation');
     showStatFeedback(_lastStatBtn, isErr);
+    setLastActionDisplay(
+      formatPlayerLabel(team, playerId) + ' · ' + prettyAction(action),
+      isErr
+    );
     _lastStatBtn = null;
   }
 
@@ -2840,9 +2891,6 @@ document.addEventListener('DOMContentLoaded', function(){
 
           // Update active player when picked via popup
           activePlayerId = p.id;
-          setLastPlayer(p.id);
-          buildPlayerStrip();
-          buildDesktopStrip();
           recordEvent(pendingAction, p.id);
         });
 
@@ -2856,8 +2904,6 @@ document.addEventListener('DOMContentLoaded', function(){
   if (pickerQuickBtn){
     pickerQuickBtn.addEventListener('click', function(){
       if (activePlayerId && pendingAction){
-        buildPlayerStrip();
-        buildDesktopStrip();
         recordEvent(pendingAction, activePlayerId);
       }
     });
@@ -2868,63 +2914,6 @@ document.addEventListener('DOMContentLoaded', function(){
   if (pickerBackdrop) pickerBackdrop.addEventListener('click', function(e){ if (e.target === pickerBackdrop) closePicker(); });
 
   // Actions that auto-assign to the active player (no picker required)
-
-  // ── Server confirmation toast ─────────────────────────────────────────────
-  var _serverConfirmTimer   = null;
-  var _serverConfirmAction  = null;
-  var _serverConfirmPid     = null;
-  var serverConfirmToast    = byId('serverConfirmToast');
-  var serverConfirmName     = byId('serverConfirmName');
-  var serverConfirmOk       = byId('serverConfirmOk');
-  var serverConfirmChange   = byId('serverConfirmChange');
-  var serverConfirmBarFill  = byId('serverConfirmBarFill');
-
-  function hideServerConfirm(){
-    if (serverConfirmToast) serverConfirmToast.style.display = 'none';
-    clearTimeout(_serverConfirmTimer);
-    if (serverConfirmBarFill){ serverConfirmBarFill.style.transition = 'none'; serverConfirmBarFill.style.width = '100%'; }
-    _serverConfirmAction = null;
-    _serverConfirmPid    = null;
-  }
-
-  function showServerConfirm(action, pid){
-    var team = activeTeam();
-    var player = team ? (team.players||[]).find(function(p){ return p.id === pid; }) : null;
-    if (!player){ recordEvent(action, pid); return; } // no name available — just record
-    _serverConfirmAction = action;
-    _serverConfirmPid    = pid;
-    if (serverConfirmName) serverConfirmName.textContent = (player.number ? '#'+player.number+' ' : '') + player.name;
-    if (serverConfirmToast) serverConfirmToast.style.display = 'block';
-    // Countdown bar — auto-confirm after 2.5s
-    if (serverConfirmBarFill){
-      serverConfirmBarFill.style.transition = 'none';
-      serverConfirmBarFill.style.width = '100%';
-      requestAnimationFrame(function(){ requestAnimationFrame(function(){
-        serverConfirmBarFill.style.transition = 'width 2.5s linear';
-        serverConfirmBarFill.style.width = '0%';
-      }); });
-    }
-    clearTimeout(_serverConfirmTimer);
-    _serverConfirmTimer = setTimeout(function(){
-      if (_serverConfirmAction){ recordEvent(_serverConfirmAction, _serverConfirmPid); }
-      hideServerConfirm();
-    }, 2500);
-  }
-
-  if (serverConfirmOk) serverConfirmOk.addEventListener('click', function(){
-    if (_serverConfirmAction) recordEvent(_serverConfirmAction, _serverConfirmPid);
-    hideServerConfirm();
-  });
-
-  if (serverConfirmChange) serverConfirmChange.addEventListener('click', function(){
-    var action = _serverConfirmAction;
-    hideServerConfirm();
-    pendingAction = action;
-    selectionMode = null;
-    selectionPayload = null;
-    if (pickerTitle) pickerTitle.textContent = 'Select Server — ' + prettyAction(action);
-    openPicker();
-  });
 
   function flashSelectPlayer(){
     var banner = document.getElementById('statBanner');
@@ -3135,7 +3124,7 @@ document.addEventListener('DOMContentLoaded', function(){
       btn.style.background = '';
       btn.style.color = '';
       btn.style.borderColor = '';
-      btn.title = 'Put libero on court at back row — or double-tap a back-row player';
+      btn.title = 'Put libero on court at back row';
     }
   }
 
@@ -4297,11 +4286,7 @@ document.addEventListener('DOMContentLoaded', function(){
   var ucUndoBtn = byId('ucUndoBtn');
   var ucNextSetBtn = byId('ucNextSetBtn');
   if (ucRulesBtn) ucRulesBtn.addEventListener('click', openRotation);
-  if (ucUndoBtn) ucUndoBtn.addEventListener('click', function(){
-    var mUndo = byId('mobileUndoBtn');
-    if (mUndo) mUndo.click();
-    else if (undoBtn) undoBtn.click();
-  });
+  if (ucUndoBtn) ucUndoBtn.addEventListener('click', undoLast);
   if (ucNextSetBtn) ucNextSetBtn.addEventListener('click', function(){ if (window._vsNextSet) window._vsNextSet(); });
 
   var ucRotForward = byId('ucRotForward');
@@ -4408,6 +4393,7 @@ document.addEventListener('DOMContentLoaded', function(){
     team.rotation.srMode  = false;
     enforceServingReceiveMode(team);
     autoSelectServer();
+    setLastActionDisplay('Side out (+1)', false);
     saveState();
     renderRotationStrip();
     if (rotationBackdrop && rotationBackdrop.style.display !== 'none') renderRotationWheel();
@@ -4426,6 +4412,7 @@ document.addEventListener('DOMContentLoaded', function(){
     team.rotation.hasBall = false;
     team.rotation.srMode  = true;
     enforceServingReceiveMode(team);
+    setLastActionDisplay('Opp point (+1)', false);
     saveState();
     renderRotationStrip();
     if (rotationBackdrop && rotationBackdrop.style.display !== 'none') renderRotationWheel();
@@ -4947,7 +4934,7 @@ document.addEventListener('DOMContentLoaded', function(){
     }
 
     // Visual + audio + haptic feedback
-    var undoBtns = [byId('undoBtn'), byId('mobileUndoBtn')].filter(Boolean);
+    var undoBtns = [byId('undoBtn'), byId('ucUndoBtn')].filter(Boolean);
     _undoBusy = true;
     undoBtns.forEach(function(b){
       b.style.background = '#16a34a';
@@ -5025,12 +5012,11 @@ document.addEventListener('DOMContentLoaded', function(){
     renderTable();
     updateOnboardingAndControls();
     renderRotationStrip();
+    refreshLastActionFromHistory(team);
     if (rotationBackdrop && rotationBackdrop.style.display !== 'none') renderRotationWheel();
   }
 
   if (undoBtn) undoBtn.addEventListener('click', undoLast);
-  var mobileUndoBtn = byId('mobileUndoBtn');
-  if (mobileUndoBtn) mobileUndoBtn.addEventListener('click', undoLast);
 
   // ── Edit / correct any stat for a player ────────────────────────────────
   var editBackdrop = byId('editBackdrop');
@@ -5267,80 +5253,7 @@ document.addEventListener('DOMContentLoaded', function(){
   var reportBtn = byId('reportBtn');
   if (reportBtn) reportBtn.addEventListener('click', openReport);
 
-  // ── Swap sets (fix mis-assigned set data without deleting) ─────────────────
-  var swapSetsBackdrop = byId('swapSetsBackdrop');
-  var swapSetA = byId('swapSetA');
-  var swapSetB = byId('swapSetB');
-  var swapSetsPreview = byId('swapSetsPreview');
-  var swapSetsMatch = byId('swapSetsMatch');
-
-  function updateSwapSetsPreview(){
-    if (!swapSetsPreview || !swapSetA || !swapSetB) return;
-    var team = activeTeam();
-    if (!team){ swapSetsPreview.textContent = ''; return; }
-    var day = daySelect ? daySelect.value : 'Day 1';
-    var match = matchSelect ? matchSelect.value : 'Match 1';
-    var matchKey = day + ' - ' + match;
-    var setA = swapSetA.value || '1';
-    var setB = swapSetB.value || '2';
-    var data = team.data[matchKey] || {};
-    var scA = scoreStore[scoreKeyFor(day, match, setA)] || {our:0, opp:0};
-    var scB = scoreStore[scoreKeyFor(day, match, setB)] || {our:0, opp:0};
-    var eventsA = countSetStatEvents(data[setA]);
-    var eventsB = countSetStatEvents(data[setB]);
-    swapSetsPreview.innerHTML =
-      '<strong>Before swap</strong><br>' +
-      'Set ' + setA + ': score ' + (scA.our||0) + '-' + (scA.opp||0) + ', ' + eventsA + ' stat events<br>' +
-      'Set ' + setB + ': score ' + (scB.our||0) + '-' + (scB.opp||0) + ', ' + eventsB + ' stat events';
-  }
-
-  function openSwapSetsModal(){
-    var team = activeTeam();
-    if (!team){ alert('Select a team first.'); return; }
-    var day = daySelect ? daySelect.value : 'Day 1';
-    var match = matchSelect ? matchSelect.value : 'Match 1';
-    if (swapSetsMatch) swapSetsMatch.textContent = day + ' · ' + match;
-    if (swapSetA) swapSetA.value = '3';
-    if (swapSetB) swapSetB.value = '1';
-    updateSwapSetsPreview();
-    if (swapSetsBackdrop) showModal(swapSetsBackdrop);
-  }
-
-  function closeSwapSetsModal(){
-    if (swapSetsBackdrop) hideModal(swapSetsBackdrop);
-  }
-
-  async function confirmSwapSets(){
-    var team = activeTeam();
-    if (!team) return;
-    var day = daySelect ? daySelect.value : 'Day 1';
-    var match = matchSelect ? matchSelect.value : 'Match 1';
-    var setA = swapSetA ? swapSetA.value : '1';
-    var setB = swapSetB ? swapSetB.value : '2';
-    if (setA === setB){ alert('Pick two different sets.'); return; }
-    var vsConfirm = window.vsConfirm || function(){ return Promise.resolve(true); };
-    var ok = await vsConfirm('Swap Set ' + setA + ' ↔ Set ' + setB + ' for ' + day + ' · ' + match + '?<br><br>Stats and scores will be exchanged. Nothing is deleted.');
-    if (!ok) return;
-    var result = swapMatchSets(team, day, match, setA, setB);
-    if (!result.ok){ alert(result.error || 'Could not swap sets.'); return; }
-    saveState();
-    closeSwapSetsModal();
-    renderTable();
-    renderScore();
-    syncExportNameDefault();
-    alert('Swapped Set ' + setA + ' and Set ' + setB + ' for ' + match + '.');
-  }
-
-  window._vsOpenSwapSets = openSwapSetsModal;
   window._vsGetMatchKey = getMatchKey;
-
-  if (swapSetA) swapSetA.addEventListener('change', updateSwapSetsPreview);
-  if (swapSetB) swapSetB.addEventListener('change', updateSwapSetsPreview);
-  if (byId('swapSetsBtn')) byId('swapSetsBtn').addEventListener('click', openSwapSetsModal);
-  if (byId('swapSetsClose')) byId('swapSetsClose').addEventListener('click', closeSwapSetsModal);
-  if (byId('swapSetsCancel')) byId('swapSetsCancel').addEventListener('click', closeSwapSetsModal);
-  if (byId('swapSetsOk')) byId('swapSetsOk').addEventListener('click', confirmSwapSets);
-  if (swapSetsBackdrop) swapSetsBackdrop.addEventListener('click', function(e){ if (e.target === swapSetsBackdrop) closeSwapSetsModal(); });
 
   var liberoChips = byId('liberoChips');
   void liberoChips;
@@ -5598,6 +5511,7 @@ document.addEventListener('DOMContentLoaded', function(){
     syncExportNameDefault();
     renderScore();
     renderRotationStrip();
+    refreshLastActionFromHistory(team);
     syncActivePlayerToPossession();
   });
 
@@ -5667,6 +5581,7 @@ document.addEventListener('DOMContentLoaded', function(){
       team.rotation.autoSubOriginals = {};
       applySetStart(team, getMatchKey(), setSelect ? setSelect.value : '1');
       applyLiberoForCurrentMatch(team);
+      refreshLastActionFromHistory(team);
       saveState();
     }
     renderTable();
@@ -5682,6 +5597,7 @@ document.addEventListener('DOMContentLoaded', function(){
       team.rotation.autoSubOriginals = {};
       applySetStart(team, getMatchKey(), setSelect.value);
       applyLiberoForCurrentMatch(team);
+      refreshLastActionFromHistory(team);
       saveState();
     }
     renderTable();
@@ -5779,7 +5695,6 @@ document.addEventListener('DOMContentLoaded', function(){
     fb.onAuthReady(function(user) {
       var appWrap = document.querySelector('.page-wrap');
       var loginOverlay = byId('loginOverlay');
-      var playerStripEl = byId('playerStrip');
       var unifiedPanel = byId('unifiedCourtPanel');
       var scorebar = document.querySelector('.score-bar');
       var syncbar = byId('syncBar');
@@ -5787,7 +5702,6 @@ document.addEventListener('DOMContentLoaded', function(){
       if (!user) {
         // Show login overlay, hide app content
         if (appWrap) appWrap.style.display = 'none';
-        if (playerStripEl) playerStripEl.style.display = 'none';
         if (unifiedPanel) unifiedPanel.style.display = 'none';
         if (scorebar) scorebar.style.display = 'none';
         if (loginOverlay) loginOverlay.style.display = 'flex';
@@ -5797,7 +5711,6 @@ document.addEventListener('DOMContentLoaded', function(){
       // Signed in — hide overlay, show app
       if (loginOverlay) loginOverlay.style.display = 'none';
       if (appWrap) appWrap.style.display = '';
-      if (playerStripEl) playerStripEl.style.display = 'none';
       if (unifiedPanel && activeTeam() && activeTeam().players && activeTeam().players.length){
         unifiedPanel.style.display = '';
       }
@@ -6529,13 +6442,7 @@ document.addEventListener('DOMContentLoaded', function(){
   var origTeamChange = teamSelect && teamSelect.onchange;
   if (teamSelect) teamSelect.addEventListener('change', renderScore);
 
-  // ── Persistent player strip ────────────────────────────────────────────────
-  var mobilePlayerSelect = byId('mobilePlayerSelect');
-  var playerStripBtns = byId('playerStripBtns');
-  // also match new class name
-  if (!playerStripBtns) playerStripBtns = document.querySelector('.ps-btns');
-  var selectedPlayerBar = byId('selectedPlayerBar');
-
+  // ── Player selection + court status ───────────────────────────────────────
   function syncActivePlayerToPossession(){
     var team = activeTeam();
     if (!team) return;
@@ -6543,7 +6450,6 @@ document.addEventListener('DOMContentLoaded', function(){
     if (team.rotation.hasBall !== false) autoSelectServer();
   }
 
-  // Auto-select the current server as the active player when we have the ball
   function autoSelectServer(){
     var team = activeTeam();
     if (!team) return;
@@ -6551,95 +6457,21 @@ document.addEventListener('DOMContentLoaded', function(){
     if (!team.rotation.hasBall) return;
     var serverId = getServerPlayerId(team);
     if (!serverId) return;
-    if (activePlayerId === serverId) { renderUnifiedCourt(); return; }
-    activePlayerId = serverId;
-    if (playerStripBtns){
-      playerStripBtns.querySelectorAll('button').forEach(function(b){
-        b.classList.toggle('active', b.dataset.pid === serverId);
-      });
-    }
-    renderUnifiedCourt();
-  }
-
-  function clearSelectedPlayer(){
-    clearPlayerSelectionForReceive();
-    buildPlayerStrip();
-    buildDesktopStrip();
-  }
-
-  function updateSelectedBar(){ /* recording-for bar removed */ }
-
-  // Desktop strip now unified — references point to universal strip
-  var desktopPlayerStrip = null;  // removed
-  var desktopStripBtns = byId('playerStripBtns');
-  var desktopSelectedBar = byId('selectedPlayerBar');
-
-  function buildDesktopStrip(){ buildPlayerStrip(); }
-
-  function buildPlayerStrip(){
-    if (!playerStripBtns) return;
-    playerStripBtns.innerHTML = '';
-    var team = activeTeam();
-    if (!team || !team.players || !team.players.length){
-      playerStripBtns.innerHTML = '<div style="font-size:12px;color:#6b7280;">Add players in Roster first</div>';
-      if (selectedPlayerBar) selectedPlayerBar.style.display = 'none';
+    if (activePlayerId === serverId){
+      patchUnifiedCourtSelection();
       return;
     }
-    if (selectedPlayerBar) selectedPlayerBar.style.display = 'block';
-    var players = team.players.slice().sort(sortPlayers);
-    players.forEach(function(p){
-      var btn = document.createElement('button');
-      btn.type = 'button';
-      btn.dataset.pid = p.id;
-      var label = (p.number ? '#'+p.number : '') + (p.number && p.name ? ' ' : '') + (p.name || '');
-      if (p.position) label += ' · ' + p.position;
-      btn.textContent = label;
-      btn.className = 'player-pill';
-      if (p.id === activePlayerId){ btn.classList.add('active'); }
-      var onCourt = getOnCourtPlayerIdSet(team);
-      var isOnCourt = !!onCourt[playerIdKey(p.id)];
-      applyPlayerPillStyle(btn, p, {
-        bench: !isOnCourt,
-        active: p.id === activePlayerId,
-        libero: isLiberoPlayer(team, p.id)
-      });
-      btn.addEventListener('click', function(){
-        selectUnifiedPlayer(p.id);
-      });
-      playerStripBtns.appendChild(btn);
-    });
-  }
-
-  function populateMobilePlayerSelect(){
-    buildPlayerStrip();
-    buildDesktopStrip();
-  }
-  populateMobilePlayerSelect();
-  syncActivePlayerToPossession();
-  renderUnifiedCourt();
-
-  // Wire clear buttons — strip blank-space tap still clears selection
-  var playerStripEl = byId('playerStrip');
-  if (playerStripEl) playerStripEl.addEventListener('click', function(e){
-    // Only clear if click landed directly on the strip container, not a button
-    if (e.target === playerStripEl || e.target === playerStripBtns || e.target === selectedPlayerBar){
-      clearSelectedPlayer();
+    activePlayerId = serverId;
+    if (byId('unifiedCourtGrid') && byId('unifiedCourtGrid').children.length){
+      patchUnifiedCourtSelection();
+    } else {
+      renderUnifiedCourt();
     }
-  });
-
-
-  // Mobile stat buttons: wire data-action to the same handler as desktop
-  // by injecting a synthetic click on the hidden desktop button, or dispatching directly
-  function fireMobileAction(action){
-    // No-op: all data-action buttons (including mobile ones) are now wired
-    // directly in the unified toolbarBtns handler above. This function is kept
-    // for compatibility but does nothing.
   }
 
-  // Override selectedPlayer for mobile: when mobile player select changes,
-  // keep desktop picker in sync. The existing code uses pendingAction + player picker modal.
-  // For mobile, we inject the player selection first.
-  // mobilePlayerSelect removed — player selection now via player strip only
+  syncActivePlayerToPossession();
+  refreshLastActionFromHistory(activeTeam());
+  renderUnifiedCourt();
 
   // Mobile roster button
   var mobileRosterBtn = byId('mobileRosterBtn');

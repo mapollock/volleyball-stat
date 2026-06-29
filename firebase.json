@@ -2,9 +2,12 @@
   "hosting": {
     "public": ".",
     "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
+    "firebase.json",
+    "**/.*",
+    "**/.agents/**",
+    "**/files/**",
+    "skills-lock.json",
+    "**/node_modules/**"
     ],
     "headers": [
       {

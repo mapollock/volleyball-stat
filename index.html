@@ -160,6 +160,12 @@
     /* ══ Unified court + bench (Phase 3) ══ */
     .unified-court-panel{background:#fff;border-bottom:2px solid #e5e7eb;padding:8px 10px 10px;position:relative;}
     .uc-header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
+    .uc-status-row{display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;}
+    .uc-status-pill{flex:1;min-width:0;font-size:11px;font-weight:800;line-height:1.25;padding:5px 10px;border-radius:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;user-select:none;}
+    .uc-status-pill.uc-recording.empty{background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb;}
+    .uc-status-pill.uc-recording.active{background:#1e3a8a;color:#fff;border:1px solid #1e3a8a;box-shadow:0 0 0 2px rgba(30,58,138,.15);}
+    .uc-status-pill.uc-last{background:#f9fafb;color:#374151;border:1px solid #e5e7eb;}
+    .uc-status-pill.uc-last.is-error{background:#fef2f2;color:#b91c1c;border-color:#fecaca;}
     .uc-rot-label{font-size:12px;font-weight:900;color:#1e3a8a;letter-spacing:.02em;}
     .uc-actions{display:flex;gap:5px;flex-wrap:wrap;}
     .uc-btn{appearance:none;border:1px solid #e5e7eb;background:#f9fafb;color:#374151;padding:0 9px;height:30px;border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;touch-action:manipulation;white-space:nowrap;}
@@ -182,11 +188,13 @@
     .uc-bench-label{font-size:10px;font-weight:800;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;margin:8px 0 4px;}
     .uc-bench-row{display:flex;align-items:stretch;gap:8px;}
     .uc-bench-main{flex:1;min-width:0;}
-    .uc-rotation-rail{display:flex;flex-direction:column;gap:4px;flex-shrink:0;align-self:stretch;justify-content:flex-start;margin-left:auto;}
-    .uc-rot-arrows{display:flex;gap:4px;}
-    .uc-rotation-rail .uc-btn{min-width:44px;height:32px;padding:0 6px;}
-    .uc-rotation-rail .uc-rot-arrows .uc-btn{flex:1;min-width:32px;font-size:16px;line-height:1;}
-    .uc-rotation-rail .uc-btn.rotation-open{font-size:10px;letter-spacing:.02em;padding:0 4px;}
+    .uc-rotation-rail{display:flex;flex-direction:column;gap:5px;flex-shrink:0;align-self:stretch;justify-content:flex-start;margin-left:auto;}
+    .uc-rot-arrows{display:flex;gap:5px;}
+    .uc-rotation-rail .uc-btn{min-width:48px;height:38px;padding:0 6px;}
+    .uc-rotation-rail .uc-rot-arrows .uc-btn{flex:1;min-width:38px;font-size:22px;font-weight:900;line-height:1;}
+    #ucRotBack{color:#16a34a;border-color:#4ade80;}
+    #ucRotForward{color:#dc2626;border-color:#f87171;}
+    .uc-rotation-rail .uc-btn.rotation-open{font-size:12px;letter-spacing:.02em;padding:0 8px;height:38px;font-weight:900;border:2px solid #000;}
     .unified-bench-rail{display:flex;flex-wrap:wrap;gap:5px;min-height:32px;align-content:flex-start;}
     .uc-libero-row{display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap;}
     .uc-libero-label{font-size:10px;font-weight:800;color:#6b7280;}
@@ -595,17 +603,6 @@
       <button id="oppScoreBtn" style="background:#dc2626;color:#fff;border:none;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:900;cursor:pointer;" title="Opponent scored — their ace, kill, etc.">OPP SCORE</button>
     </div>
   </div>
-  <!-- Server confirmation toast -->
-  <div id="serverConfirmToast" style="display:none;position:fixed;bottom:0;left:50%;transform:translateX(-50%);z-index:2000;width:100%;max-width:480px;background:#1e3a8a;color:#fff;padding:12px 16px 16px;border-radius:16px 16px 0 0;box-shadow:0 -4px 24px rgba(0,0,0,.35);touch-action:manipulation;">
-    <div style="font-size:11px;font-weight:700;color:#93c5fd;margin-bottom:4px;letter-spacing:.05em;">SERVING</div>
-    <div id="serverConfirmName" style="font-size:20px;font-weight:900;line-height:1.1;margin-bottom:10px;"></div>
-    <div style="display:grid;grid-template-columns:1fr 2fr;gap:8px;">
-      <button id="serverConfirmChange" type="button" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:10px;padding:10px;font-size:13px;font-weight:800;cursor:pointer;">⇄ Change</button>
-      <button id="serverConfirmOk" type="button" style="background:#16a34a;color:#fff;border:none;border-radius:10px;padding:10px;font-size:15px;font-weight:900;cursor:pointer;">✓ Correct</button>
-    </div>
-    <div id="serverConfirmBar" style="height:3px;background:rgba(255,255,255,.25);border-radius:2px;margin-top:10px;overflow:hidden;"><div id="serverConfirmBarFill" style="height:100%;background:#4ade80;width:100%;transition:width 2.5s linear;"></div></div>
-  </div>
-
   <!-- ══ UNIFIED COURT + BENCH (always visible when roster loaded) ══ -->
   <div id="unifiedCourtPanel" class="unified-court-panel" style="display:none;">
     <div class="uc-header">
@@ -614,6 +611,10 @@
         <button id="ucUndoBtn" type="button" class="uc-btn">Undo</button>
         <button id="ucNextSetBtn" type="button" class="uc-btn primary">Next Set ▶</button>
       </div>
+    </div>
+    <div class="uc-status-row" aria-live="polite" aria-atomic="true">
+      <div id="ucRecordingBar" class="uc-status-pill uc-recording empty">Tap a player to record</div>
+      <div id="ucLastActionBar" class="uc-status-pill uc-last">Last: —</div>
     </div>
     <div id="unifiedCourtGrid" class="unified-court-grid" aria-label="Court lineup"></div>
     <div class="uc-bench-row">
@@ -638,20 +639,6 @@
         <span>Auto on rotate</span>
       </label>
     </div>
-  </div>
-
-  <div class="player-strip" id="playerStrip" style="display:none;">
-    <div class="ps-header">
-      <span class="ps-title">Select Player</span>
-      <div class="ps-actions">
-        <button id="clearPlayerBtn" class="ps-btn red" title="Clear auto-record player selection" style="display:none" hidden>Clear auto-record</button>
-        <button id="mobileUndoBtn" class="ps-btn">Undo Last</button>
-        <button onclick="window._vsNextSet()" class="ps-btn" style="background:#1e3a8a;color:#fff;border-color:#1e3a8a;font-weight:900;">Next Set ▶</button>
-        <button id="mobileEditBtn" class="ps-btn">Edit</button>
-      </div>
-    </div>
-    <div class="ps-btns" id="playerStripBtns"></div>
-    <div class="sel-bar" id="selectedPlayerBar" style="display:none" hidden></div>
   </div>
 
   <!-- ══ 4. STAT BUTTONS ════════════════════════════════════════════════════ -->
@@ -836,7 +823,6 @@
         <div class="bc-row">
           <input id="exportName" class="bc-input" placeholder="Save export as…" />
           <button id="exportBtn" type="button" class="bc-btn primary">Export CSV</button>
-          <button id="swapSetsBtn" type="button" class="bc-btn" title="Swap stats and scores between two sets">Swap Sets</button>
           <button id="rotationBtn" type="button" class="bc-btn" style="display:none">Rotation</button>
           <button id="resetBtn" type="button" class="bc-btn danger">Reset</button>
         </div>
@@ -876,10 +862,6 @@
 
   </div><!-- end page-wrap -->
 
-  <!-- ══ Floating Rotation Button ══ -->
-  <button id="rotationFAB" aria-label="Open rotation">
-    <span class="fab-rot">🔄</span> Rotation
-  </button>
 
   <!-- ══ MODALS ══════════════════════════════════════════════════════════════ -->
 
@@ -1073,42 +1055,6 @@
     </div>
   </div>
 
-  <div id="swapSetsBackdrop" class="modal-backdrop hidden modal-backdrop-el" style="display:none" role="dialog" aria-modal="true" aria-labelledby="swapSetsTitle">
-    <div class="modal">
-      <div class="modal-header">
-        <div class="modal-title" id="swapSetsTitle">Swap Sets</div>
-        <button id="swapSetsClose" type="button" class="icon-btn" aria-label="Close">✕</button>
-      </div>
-      <div class="modal-body">
-        <p style="font-size:13px;color:#374151;line-height:1.5;margin:0 0 12px;">Exchange all stats and scores between two sets in the current match. Nothing is deleted — data moves with each set.</p>
-        <div class="confirm-row" style="margin-bottom:10px;"><div class="confirm-label">Match</div><div id="swapSetsMatch" class="confirm-value"></div></div>
-        <div class="form-row" style="display:flex;gap:10px;flex-wrap:wrap;">
-          <div class="field" style="flex:1;min-width:120px;">
-            <label>Set A</label>
-            <select id="swapSetA" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px;font-size:14px;font-weight:700;">
-              <option value="1">Set 1</option>
-              <option value="2">Set 2</option>
-              <option value="3" selected>Set 3</option>
-            </select>
-          </div>
-          <div class="field" style="flex:1;min-width:120px;">
-            <label>Set B</label>
-            <select id="swapSetB" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px;font-size:14px;font-weight:700;">
-              <option value="1" selected>Set 1</option>
-              <option value="2">Set 2</option>
-              <option value="3">Set 3</option>
-            </select>
-          </div>
-        </div>
-        <div id="swapSetsPreview" style="margin-top:12px;font-size:12px;color:#6b7280;line-height:1.5;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px;"></div>
-      </div>
-      <div class="modal-footer">
-        <button id="swapSetsCancel" type="button" class="btn secondary">Cancel</button>
-        <button id="swapSetsOk" type="button" class="btn">Swap Sets</button>
-      </div>
-    </div>
-  </div>
-
   <div id="editBackdrop" class="modal-backdrop hidden modal-backdrop-el" style="display:none" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
     <div class="modal" style="max-height:85vh;display:flex;flex-direction:column;">
       <div class="modal-header">
@@ -1162,6 +1108,6 @@
       document.getElementById('loginError').classList.remove('visible');
     }
   </script>
-  <script type="module" src="app.js?v=0.1.160"></script>
+  <script type="module" src="app.js?v=0.1.162"></script>
 </body>
 </html>
