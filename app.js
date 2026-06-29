@@ -10,7 +10,7 @@
  *   Manual +our score also triggers rotation when we didn't have the ball.
  */
 
-var APP_VERSION = '0.1.143';
+var APP_VERSION = '0.1.160';
 console.log('[VolleyStat] v' + APP_VERSION + ' loaded');
 
 var STORAGE_KEY = 'volleystat_v1'; // stable key — do not change between versions
@@ -26,6 +26,7 @@ var SERVE_WEIGHTS = { serve1: 1, serve2: 2, serve3: 3, ace: 4 };
 
 var HIT_ATTEMPT_ACTIONS = ['swing', 'swingOut', 'kill'];
 var HIT_ERROR_ACTIONS = ['swingOut'];
+var SERVE_ACTIONS = { serve1:1, serve2:1, serve3:1, ace:1, serveOut:1 };
 
 // Unforced error action keys
 var ERROR_ACTIONS = ['errHitting', 'errServing', 'errPassing', 'errNet', 'errTwoHand', 'errRotation'];
@@ -34,7 +35,7 @@ var ERROR_LABELS = {
   errServing:  'Serve Error',
   errPassing:  'Pass Error',
   errNet:      'In the Net',
-  errTwoHand:  'Two Hand',
+  errTwoHand:  'BHE',
   errRotation: 'Out of Rotation'
 };
 
@@ -47,7 +48,7 @@ var LABELS = {
     acePct: 'Ace%',
     passAtt: 'Pass Att',
     passAvg: 'Pass Avg',
-    hint: 'Serve In % = (1 + 2 + 3 + ACE) ÷ Serve Attempts. OUT is a serve attempt but not "in". Green row = current server (Pos 1).'
+    hint: 'Serve In % = (1 + 2 + 3 + ACE) ÷ Serve Attempts. ERR is a serve attempt but not "in". Green row = current server (Pos 1).'
   },
   coach: {
     serveAtt: 'Svr In Play',
@@ -61,7 +62,7 @@ var LABELS = {
   }
 };
 
-var SERVE_IN_TOOLTIP = 'Serve In %: serves kept in play (1/2/3 + ACE) ÷ total serve attempts (includes OUT).';
+var SERVE_IN_TOOLTIP = 'Serve In %: serves kept in play (1/2/3 + ACE) ÷ total serve attempts (includes ERR).';
 var SERVE_PRESSURE_TOOLTIP = 'Serve Pressure %: (Aces + opponent 1-passes) ÷ serves in play. Higher = more pressure on their receive.';
 var RECV_PRESSURE_TOOLTIP = 'Recv Pressure: our pass average when receiving. Higher = better passes and more pressure on their defense.';
 
@@ -80,6 +81,140 @@ function posColorKey(pos){
   if (p === 'MB1' || p === 'MB2') return 'MB';
   return p;
 }
+
+var POS_COLORS = {
+  'S':   { bg:'#dbeafe', border:'#2563eb', text:'#1e3a8a' },
+  'OH':  { bg:'#dcfce7', border:'#16a34a', text:'#14532d' },
+  'MB':  { bg:'#ede9fe', border:'#7c3aed', text:'#5b21b6' },
+  'RS':  { bg:'#cffafe', border:'#06b6d4', text:'#164e63' },
+  'LIB': { bg:'#fde047', border:'#000000', text:'#422006' },
+  'DS':  { bg:'#ccfbf1', border:'#0d9488', text:'#134e4a' }
+};
+
+var LIBERO_COLORS = {
+  bg: '#fde047',
+  border: '#000000',
+  text: '#422006',
+  activeBg: '#facc15',
+  activeBorder: '#000000',
+  onCourtBg: '#fde047',
+  onCourtBorder: '#000000',
+  onCourtText: '#422006',
+  ring: 'rgba(0,0,0,.25)'
+};
+
+function getPosColorsForPlayer(player){
+  if (!player || !player.position) return { bg:'#f3f4f6', border:'#e5e7eb', text:'#374151' };
+  return POS_COLORS[posColorKey(player.position)] || { bg:'#f3f4f6', border:'#e5e7eb', text:'#374151' };
+}
+
+function applyPlayerPillStyle(btn, player, opts){
+  opts = opts || {};
+  if (opts.bench && !opts.active){
+    btn.style.background = '#e5e7eb';
+    btn.style.borderColor = '#d1d5db';
+    btn.style.color = '#6b7280';
+    btn.style.boxShadow = '';
+    return;
+  }
+  if (opts.libero){
+    btn.style.background = opts.active ? LIBERO_COLORS.activeBg : LIBERO_COLORS.bg;
+    btn.style.borderColor = opts.active ? LIBERO_COLORS.activeBorder : LIBERO_COLORS.border;
+    btn.style.color = LIBERO_COLORS.text;
+    btn.style.boxShadow = opts.active ? ('0 0 0 2px ' + LIBERO_COLORS.ring) : '';
+    return;
+  }
+  var c = getPosColorsForPlayer(player);
+  btn.style.background = opts.active ? c.border : c.bg;
+  btn.style.borderColor = c.border;
+  btn.style.color = opts.active ? '#fff' : c.text;
+  btn.style.boxShadow = opts.active ? ('0 0 0 2px ' + c.bg) : '';
+}
+
+function enforceServingReceiveMode(team){
+  if (!team || !team.rotation) return;
+  if (team.rotation.hasBall !== false) team.rotation.srMode = false;
+}
+
+function rememberActiveLibero(team, matchKey, liberoId){
+  if (!team || !liberoId || !matchKey) return;
+  if (!team.lastLiberoByMatch) team.lastLiberoByMatch = {};
+  team.lastLiberoByMatch[matchKey] = liberoId;
+}
+
+function getPreferredLiberoId(team, matchKey){
+  var des = getLiberoDesignations(team, matchKey);
+  if (!des.length) return null;
+  var last = team.lastLiberoByMatch && team.lastLiberoByMatch[matchKey];
+  if (last){
+    for (var i=0; i<des.length; i++){
+      if (playerIdKey(des[i]) === playerIdKey(last)) return des[i];
+    }
+  }
+  if (team.rotation && team.rotation.liberoId){
+    for (var j=0; j<des.length; j++){
+      if (playerIdKey(des[j]) === playerIdKey(team.rotation.liberoId)) return des[j];
+    }
+  }
+  return des[0];
+}
+
+function ensureSetLineups(team){
+  if (!team.setLineups) team.setLineups = {};
+}
+
+function saveSetLineup(team, matchKey, setNum, base, startOffset){
+  ensureSetLineups(team);
+  if (!team.setLineups[matchKey]) team.setLineups[matchKey] = {};
+  team.setLineups[matchKey][String(setNum)] = {
+    base: JSON.parse(JSON.stringify(base)),
+    startOffset: Math.max(0, Math.min(5, (parseInt(startOffset, 10) || 1) - 1))
+  };
+}
+
+function getSetLineup(team, matchKey, setNum){
+  ensureSetLineups(team);
+  var bucket = team.setLineups[matchKey];
+  if (!bucket) return null;
+  return bucket[String(setNum)] || null;
+}
+
+function applySetStart(team, matchKey, setNum){
+  ensureRotation(team);
+  var plan = getSetLineup(team, matchKey, setNum);
+  if (plan && plan.base){
+    team.rotation.base = JSON.parse(JSON.stringify(plan.base));
+  } else if (team.savedBase){
+    team.rotation.base = JSON.parse(JSON.stringify(team.savedBase));
+  }
+  resetRotationRuntimeState(team);
+  team.rotation.offset = plan ? (plan.startOffset || 0) : 0;
+  applyRulesForOffset(team, team.rotation.offset || 0);
+  enforceServingReceiveMode(team);
+}
+
+function countMatchSetsWon(day, match, throughSet, tournament, scoreStoreRef){
+  var our = 0, opp = 0;
+  for (var s = 1; s <= throughSet; s++){
+    var sw = getSetWinScore(s, tournament);
+    var sc = (s === throughSet && scoreStoreRef._current)
+      ? scoreStoreRef._current
+      : (scoreStoreRef[scoreKeyFor(day, match, s)] || { our: 0, opp: 0 });
+    var so = sc.our || 0, sop = sc.opp || 0;
+    if (so >= sw && (so - sop) >= 2) our++;
+    else if (sop >= sw && (sop - so) >= 2) opp++;
+  }
+  return { our: our, opp: opp };
+}
+
+function getOnCourtPlayerIdSet(team){
+  var map = currentPosToPlayerId(team);
+  var ids = {};
+  for (var p=1; p<=6; p++){
+    if (map[p]) ids[playerIdKey(map[p])] = true;
+  }
+  return ids;
+}
 function firstName(name){
   return (name || '').split(' ')[0] || name || '';
 }
@@ -94,6 +229,7 @@ function ensureRotation(team){
   if (team.rotation.liberoActive === undefined) team.rotation.liberoActive = false;
   if (team.rotation.liberoId === undefined) team.rotation.liberoId = null;
   if (team.rotation.liberoSlot === undefined) team.rotation.liberoSlot = null;
+  if (team.rotation.liberoCourtPos === undefined) team.rotation.liberoCourtPos = null;
   if (team.rotation.dsActive === undefined) team.rotation.dsActive = false;
   if (team.rotation.dsId === undefined) team.rotation.dsId = null;
   if (team.rotation.srMode === undefined) team.rotation.srMode = false;
@@ -115,6 +251,7 @@ function ensureRotation(team){
   if (team.rotation.liberoMB2 === undefined) team.rotation.liberoMB2 = true;
   if (team.rotation.liberoForMB1 === undefined) team.rotation.liberoForMB1 = true;
   if (team.rotation.liberoForMB2 === undefined) team.rotation.liberoForMB2 = true;
+  if (team.rotation.liberoAutoOnRotate === undefined) team.rotation.liberoAutoOnRotate = true;
   // Libero must never be tracked as a bench auto-sub
   var libIdClean = getLiberoId(team);
   if (libIdClean && team.rotation.autoSubs){
@@ -264,20 +401,202 @@ function courtPosToBaseSlot(team, courtPos){
   }
   return null;
 }
+
+function getCourtPosForPlayer(team, pid){
+  if (!team || !pid) return null;
+  var map = currentPosToPlayerId(team);
+  var key = playerIdKey(pid);
+  for (var pos = 1; pos <= 6; pos++){
+    if (map[pos] && playerIdKey(map[pos]) === key) return pos;
+  }
+  return null;
+}
 function isMBBaseSlot(slot){ return slot === 3 || slot === 6; }
 function isSubRuleSlot(slot){ return slot === 1 || slot === 2 || slot === 4 || slot === 5; }
 var BACK_ROW_POSITIONS = {1:true, 5:true, 6:true};
 
-function getLiberoId(team){
+function playerIdKey(id){
+  return id == null ? '' : String(id);
+}
+
+function getLiberoCandidates(team){
   var players = team.players || [];
-  for (var i=0;i<players.length;i++){
-    if (normPosToken(players[i].position) === 'LIB') return players[i].id;
+  var out = [];
+  for (var i=0; i<players.length; i++){
+    if (isLiberoCandidatePosition(players[i].position)) out.push(players[i]);
+  }
+  return out.sort(sortPlayers);
+}
+
+function isLiberoCandidatePosition(pos){
+  var tok = normPosToken(pos);
+  return tok === 'DS' || isLiberoPosition(pos);
+}
+
+function isValidLiberoCandidate(team, pid){
+  if (!pid || !team) return false;
+  var key = playerIdKey(pid);
+  var players = team.players || [];
+  for (var i=0; i<players.length; i++){
+    if (playerIdKey(players[i].id) !== key) continue;
+    return isLiberoCandidatePosition(players[i].position);
+  }
+  return false;
+}
+
+function getLegacyLiberoId(team){
+  var players = team.players || [];
+  for (var i=0; i<players.length; i++){
+    if (isLiberoPosition(players[i].position)) return players[i].id;
   }
   return null;
 }
 
-function playerIdKey(id){
-  return id == null ? '' : String(id);
+function normalizeLiberoByMatchEntry(entry){
+  if (!entry) return [];
+  if (typeof entry === 'string') return entry ? [entry] : [];
+  if (Array.isArray(entry)){
+    var out = [];
+    for (var i=0; i<entry.length && out.length < 2; i++){
+      if (entry[i] && out.indexOf(entry[i]) < 0) out.push(entry[i]);
+    }
+    return out;
+  }
+  return [];
+}
+
+function getLiberoDesignations(team, matchKey){
+  if (!team) return [];
+  if (!team.liberoByMatch) team.liberoByMatch = {};
+  var key = matchKey;
+  if (!key && typeof window !== 'undefined' && window._vsGetMatchKey) key = window._vsGetMatchKey();
+  var ids = normalizeLiberoByMatchEntry(key ? team.liberoByMatch[key] : null);
+  var out = [];
+  for (var i=0; i<ids.length; i++){
+    if (isValidLiberoCandidate(team, ids[i]) && out.indexOf(ids[i]) < 0) out.push(ids[i]);
+  }
+  if (!out.length){
+    var leg = getLegacyLiberoId(team);
+    if (leg) out.push(leg);
+  }
+  return out.slice(0, 2);
+}
+
+function saveLiberoDesignations(team, matchKey, ids){
+  if (!team) return;
+  if (!team.liberoByMatch) team.liberoByMatch = {};
+  var cleaned = [];
+  for (var i=0; i<(ids || []).length && cleaned.length < 2; i++){
+    var id = ids[i];
+    if (id && isValidLiberoCandidate(team, id) && cleaned.indexOf(id) < 0) cleaned.push(id);
+  }
+  if (cleaned.length) team.liberoByMatch[matchKey] = cleaned;
+  else delete team.liberoByMatch[matchKey];
+}
+
+function getLiberoId(team, matchKey){
+  if (!team) return null;
+  var designations = getLiberoDesignations(team, matchKey);
+  if (team.rotation && team.rotation.liberoActive && team.rotation.liberoId
+      && isLiberoPlayer(team, team.rotation.liberoId, matchKey)){
+    return team.rotation.liberoId;
+  }
+  return designations[0] || null;
+}
+
+function assignLiberoSlot(team, matchKey, slotIndex, playerId){
+  var des = getLiberoDesignations(team, matchKey).slice();
+  while (des.length < 2) des.push(null);
+  des = des.slice(0, 2);
+  if (playerId){
+    for (var i=0; i<des.length; i++){
+      if (i !== slotIndex && des[i] && playerIdKey(des[i]) === playerIdKey(playerId)) des[i] = null;
+    }
+    des[slotIndex] = playerId;
+  } else {
+    des.splice(slotIndex, 1);
+  }
+  des = des.filter(function(id){ return !!id; });
+  saveLiberoDesignations(team, matchKey, des);
+  return des;
+}
+
+function cycleLiberoSlot(team, matchKey, slotIndex){
+  var des = getLiberoDesignations(team, matchKey).slice();
+  while (des.length < 2) des.push(null);
+  var candidates = getLiberoCandidates(team);
+  var options = [null];
+  for (var i=0; i<candidates.length; i++) options.push(candidates[i].id);
+  var current = des[slotIndex] || null;
+  var idx = 0;
+  for (var j=0; j<options.length; j++){
+    if ((!options[j] && !current) || (options[j] && current && playerIdKey(options[j]) === playerIdKey(current))){
+      idx = j;
+      break;
+    }
+  }
+  var next = options[(idx + 1) % options.length];
+  return assignLiberoSlot(team, matchKey, slotIndex, next);
+}
+
+function scoreKeyFor(day, match, set){
+  return day + ' - ' + match + ' - Set ' + set;
+}
+
+function scoreKeyFromHistoryEntry(entry){
+  if (!entry) return null;
+  if (entry.scoreKey) return entry.scoreKey;
+  if (entry.match != null && entry.set != null) return entry.match + ' - Set ' + entry.set;
+  return null;
+}
+
+function countSetStatEvents(setData){
+  var total = 0;
+  if (!setData) return 0;
+  for (var pid in setData){
+    if (!setData.hasOwnProperty(pid)) continue;
+    var c = setData[pid];
+    for (var k in c){
+      if (c.hasOwnProperty(k) && nz(c[k], 0) > 0) total += nz(c[k], 0);
+    }
+  }
+  return total;
+}
+
+function swapMatchSets(team, day, match, setA, setB){
+  setA = String(setA);
+  setB = String(setB);
+  if (setA === setB) return { ok:false, error:'Pick two different sets.' };
+  var matchKey = day + ' - ' + match;
+  normalizeTeam(team);
+  if (!team.data[matchKey]) team.data[matchKey] = { '1':{}, '2':{}, '3':{} };
+
+  var dataA = team.data[matchKey][setA] || {};
+  var dataB = team.data[matchKey][setB] || {};
+  team.data[matchKey][setA] = dataB;
+  team.data[matchKey][setB] = dataA;
+
+  var skA = scoreKeyFor(day, match, setA);
+  var skB = scoreKeyFor(day, match, setB);
+  var scA = scoreStore[skA] ? { our: scoreStore[skA].our || 0, opp: scoreStore[skA].opp || 0 } : { our:0, opp:0 };
+  var scB = scoreStore[skB] ? { our: scoreStore[skB].our || 0, opp: scoreStore[skB].opp || 0 } : { our:0, opp:0 };
+  scoreStore[skA] = scB;
+  scoreStore[skB] = scA;
+
+  if (team.history){
+    var tmp = '__swap_tmp__';
+    for (var i=0; i<team.history.length; i++){
+      var h = team.history[i];
+      if (h.match !== matchKey) continue;
+      if (h.set === setA) h.set = tmp;
+      else if (h.set === setB) h.set = setA;
+    }
+    for (var j=0; j<team.history.length; j++){
+      var h2 = team.history[j];
+      if (h2.match === matchKey && h2.set === tmp) h2.set = setB;
+    }
+  }
+  return { ok:true, matchKey:matchKey, setA:setA, setB:setB, scoreA:scB, scoreB:scA };
 }
 
 function isLiberoPosition(pos){
@@ -285,17 +604,14 @@ function isLiberoPosition(pos){
   return tok === 'LIB' || tok === 'LIBERO' || tok === 'L';
 }
 
-function isLiberoPlayer(team, pid){
-  if (!pid) return false;
+function isLiberoPlayer(team, pid, matchKey){
+  if (!pid || !team) return false;
   var key = playerIdKey(pid);
-  var players = team.players || [];
-  for (var i=0; i<players.length; i++){
-    if (playerIdKey(players[i].id) !== key) continue;
-    if (isLiberoPosition(players[i].position)) return true;
-    break;
+  var designations = getLiberoDesignations(team, matchKey);
+  for (var i=0; i<designations.length; i++){
+    if (playerIdKey(designations[i]) === key) return true;
   }
-  var libId = (team.rotation && team.rotation.liberoId) || getLiberoId(team);
-  return !!libId && playerIdKey(libId) === key;
+  return false;
 }
 
 // Libero for MB is unlimited and does not count toward the 15 team subs per set.
@@ -433,12 +749,12 @@ function currentPosToPlayerId(team){
     var cur = rotatedPos(slot, offset);
     map[cur] = pid;
   }
-  // Libero swap: replaces whichever middle (MB1 or MB2) is tracked in liberoSlot
+  // Libero overlay on any back-row court position
   if (team.rotation.liberoActive){
-    var libId = team.rotation.liberoId || getLiberoId(team);
+    var libId = team.rotation.liberoId || getLiberoDesignations(team)[0];
     if (libId){
-      var libTargetPos = (team.rotation.liberoSlot === 'MB2') ? getMB2CurrentPos(team) : getMB1CurrentPos(team);
-      if (libTargetPos && isLiberoReplacePos(libTargetPos)){
+      var libTargetPos = getLiberoCourtPos(team);
+      if (libTargetPos && BACK_ROW_POSITIONS[libTargetPos]){
         map[libTargetPos] = libId;
       }
     }
@@ -473,6 +789,7 @@ function resetRotationRuntimeState(team){
   team.rotation.liberoActive = false;
   team.rotation.liberoId = null;
   team.rotation.liberoSlot = null;
+  team.rotation.liberoCourtPos = null;
   team.rotation.srMode = false;
 }
 
@@ -483,6 +800,59 @@ function courtLineupFromBaseObj(baseObj){
     d[cp] = baseObj[inverseBaseForCurrentPos(cp, 0)] || null;
   }
   return d;
+}
+
+function ensureLineupPresets(team){
+  if (!team) return;
+  if (!Array.isArray(team.lineupPresets)) team.lineupPresets = [];
+}
+
+function saveLineupPreset(team, name, base, startRot){
+  ensureLineupPresets(team);
+  var trimmed = (name || '').trim();
+  if (!trimmed || !base) return null;
+  var startOffset = Math.max(0, Math.min(5, (parseInt(startRot, 10) || 1) - 1));
+  var existing = null;
+  for (var i=0; i<team.lineupPresets.length; i++){
+    if ((team.lineupPresets[i].name || '').toLowerCase() === trimmed.toLowerCase()){
+      existing = team.lineupPresets[i];
+      break;
+    }
+  }
+  var entry = {
+    id: existing ? existing.id : cryptoId(),
+    name: trimmed,
+    base: JSON.parse(JSON.stringify(base)),
+    startOffset: startOffset
+  };
+  if (existing){
+    for (var j=0; j<team.lineupPresets.length; j++){
+      if (team.lineupPresets[j].id === existing.id){ team.lineupPresets[j] = entry; break; }
+    }
+  } else {
+    team.lineupPresets.push(entry);
+  }
+  return entry;
+}
+
+function getLineupPreset(team, id){
+  ensureLineupPresets(team);
+  if (!id) return null;
+  for (var i=0; i<team.lineupPresets.length; i++){
+    if (team.lineupPresets[i].id === id) return team.lineupPresets[i];
+  }
+  return null;
+}
+
+function deleteLineupPreset(team, id){
+  ensureLineupPresets(team);
+  team.lineupPresets = team.lineupPresets.filter(function(p){ return p.id !== id; });
+}
+
+function getPreviousSetLineup(team, matchKey, setNum){
+  var n = parseInt(setNum, 10) || 1;
+  if (n > 1) return getSetLineup(team, matchKey, n - 1);
+  return null;
 }
 
 function restoreRotationOneBase(team){
@@ -497,6 +867,63 @@ function mbBaseSlotForLabel(label){ return label === 'MB2' ? 3 : 6; }
 
 function isMiddleBackRowPos(courtPos){
   return courtPos === 1 || courtPos === 5 || courtPos === 6;
+}
+
+function getLiberoCourtPos(team){
+  if (!team || !team.rotation || !team.rotation.liberoActive) return null;
+  if (team.rotation.liberoCourtPos) return team.rotation.liberoCourtPos;
+  if (team.rotation.liberoSlot){
+    return team.rotation.liberoSlot === 'MB2' ? getMB2CurrentPos(team) : getMB1CurrentPos(team);
+  }
+  return null;
+}
+
+function syncLiberoSlotFromCourtPos(team, courtPos){
+  if (!team || !team.rotation || !courtPos) return;
+  team.rotation.liberoCourtPos = courtPos;
+  var mb1 = getMB1CurrentPos(team);
+  var mb2 = getMB2CurrentPos(team);
+  if (courtPos === mb1) team.rotation.liberoSlot = 'MB1';
+  else if (courtPos === mb2) team.rotation.liberoSlot = 'MB2';
+  else team.rotation.liberoSlot = null;
+}
+
+function canLiberoReplaceAtPos(team, courtPos, force){
+  if (!courtPos || !BACK_ROW_POSITIONS[courtPos]) return false;
+  if (courtPos !== 1) return true;
+  var mb1 = getMB1CurrentPos(team);
+  var mb2 = getMB2CurrentPos(team);
+  if (courtPos === mb1 && shouldSkipLiberoForMiddle(team, 'MB1', 1, force)) return false;
+  if (courtPos === mb2 && shouldSkipLiberoForMiddle(team, 'MB2', 1, force)) return false;
+  if (courtPos !== mb1 && courtPos !== mb2) return !!force;
+  return true;
+}
+
+function activateLiberoAtPos(team, courtPos, liberoId, force){
+  ensureRotation(team);
+  if (!canLiberoReplaceAtPos(team, courtPos, force)) return false;
+  if (!liberoId){
+    var des = getLiberoDesignations(team);
+    liberoId = team.rotation.liberoId || des[0];
+  }
+  if (!liberoId || !isLiberoPlayer(team, liberoId)) return false;
+  team.rotation.liberoId = liberoId;
+  team.rotation.liberoActive = true;
+  syncLiberoSlotFromCourtPos(team, courtPos);
+  var mk = (typeof window !== 'undefined' && window._vsGetMatchKey) ? window._vsGetMatchKey() : null;
+  if (mk) rememberActiveLibero(team, mk, liberoId);
+  return true;
+}
+
+function swapActingLibero(team){
+  if (!team || !team.rotation || !team.rotation.liberoActive) return false;
+  var des = getLiberoDesignations(team);
+  if (des.length < 2) return false;
+  var current = team.rotation.liberoId;
+  var other = playerIdKey(des[0]) === playerIdKey(current) ? des[1] : des[0];
+  if (!other || playerIdKey(other) === playerIdKey(current)) return false;
+  team.rotation.liberoId = other;
+  return true;
 }
 
 function isLiberoReplacePos(courtPos){
@@ -549,40 +976,44 @@ function findLiberoEligibleMB(team, offset, force){
 
 function getLiberoDisplayTarget(team){
   ensureRotation(team);
-  if (team.rotation.liberoActive && team.rotation.liberoSlot) return team.rotation.liberoSlot;
+  if (team.rotation.liberoActive){
+    var cp = getLiberoCourtPos(team);
+    if (cp) return 'Pos ' + cp;
+  }
   return findLiberoEligibleMB(team);
 }
 
 function tryActivateLibero(team, offset, force){
   ensureRotation(team);
   autoFillBaseFromRoster(team);
-  var libId = getLiberoId(team);
-  if (!libId) return false;
   var off = offset !== undefined ? offset : (team.rotation.offset || 0);
+  var mk = (typeof window !== 'undefined' && window._vsGetMatchKey) ? window._vsGetMatchKey() : null;
 
-  if (team.rotation.liberoActive && team.rotation.liberoSlot){
-    var activeLabel = team.rotation.liberoSlot;
-    var activePos = rotatedPos(mbBaseSlotForLabel(activeLabel), off);
-    if (isMiddleBackRowPos(activePos) && liberoEnabledForMiddle(team, activeLabel)
-        && !shouldSkipLiberoForMiddle(team, activeLabel, activePos, force)){
-      team.rotation.liberoId = libId;
-      return true;
-    }
+  if (!force && team.rotation.liberoAutoOnRotate === false) return false;
+
+  if (team.rotation.liberoActive && team.rotation.liberoId){
+    var activePos = getLiberoCourtPos(team);
+    if (activePos && canLiberoReplaceAtPos(team, activePos, force)) return true;
     deactivateLibero(team);
   }
 
+  var libId = team.rotation.liberoId;
+  if (!libId || !isLiberoPlayer(team, libId, mk)) libId = getPreferredLiberoId(team, mk);
+  if (!libId) return false;
+
   var label = findLiberoEligibleMB(team, off, force);
-  if (!label) return false;
-  team.rotation.liberoId = libId;
-  team.rotation.liberoSlot = label;
-  team.rotation.liberoActive = true;
-  return true;
+  if (label){
+    var pos = rotatedPos(mbBaseSlotForLabel(label), off);
+    if (activateLiberoAtPos(team, pos, libId, force)) return true;
+  }
+  return false;
 }
 
 function deactivateLibero(team){
   if (!team || !team.rotation) return;
   team.rotation.liberoActive = false;
   team.rotation.liberoSlot = null;
+  team.rotation.liberoCourtPos = null;
 }
 function getLineupBaseForReplay(team){
   ensureRotation(team);
@@ -637,7 +1068,9 @@ function applyRulesForOffset(team, offset){
   deactivateLibero(team);
   autoFillBaseFromRoster(team);
   applyAutoSubsForOffset(team, offset);
-  tryActivateLibero(team, offset, false);
+  if (team.rotation.liberoAutoOnRotate !== false){
+    tryActivateLibero(team, offset, false);
+  }
 }
 
 // Replay from saved base through each rotation so forward/back stay in sync with libero + auto-subs.
@@ -709,8 +1142,49 @@ function sortPlayers(a,b){
   return String(a.name||'').localeCompare(String(b.name||''));
 }
 function prettyAction(a){
-  var map = { serve1:'1', serve2:'2', serve3:'3', ace:'ACE', serveOut:'OUT', passToTarget:'3', passNearTarget:'2', passAwayTarget:'1', passShank:'0', swing:'Swing', swingOut:'Error', kill:'Kill', dig:'Dig', digErr:'Dig Err', blockKill:'Block Kill', blockErr:'Block Err', oos:'OOS', errHitting:'Hit Err', errServing:'Srv Err', errPassing:'Pass Err', errNet:'Net', errTwoHand:'2-Touch', errRotation:'O.O.R.' };
+  var map = { serve1:'1', serve2:'2', serve3:'3', ace:'ACE', serveOut:'ERR', passToTarget:'3', passNearTarget:'2', passAwayTarget:'1', passShank:'0', swing:'Swing', swingOut:'ERR', kill:'Kill', dig:'Dig', digErr:'Dig Err', blockKill:'Block Kill', blockErr:'Block Err', oos:'OOS', errHitting:'Hit Err', errServing:'Srv Err', errPassing:'Pass Err', errNet:'Net', errTwoHand:'BHE', errRotation:'O.O.R.' };
   return map[a] || a;
+}
+
+var DEFAULT_TOURNAMENT = { format:'bestOf3', set3WinScore:15, set5WinScore:15 };
+
+function defaultTournament(){
+  return { format:'bestOf3', set3WinScore:15, set5WinScore:15 };
+}
+
+function normalizeTournament(st){
+  if (!st) return defaultTournament();
+  if (!st.tournament || typeof st.tournament !== 'object') st.tournament = defaultTournament();
+  if (st.tournament.format !== 'bestOf5') st.tournament.format = 'bestOf3';
+  var s3 = parseInt(st.tournament.set3WinScore, 10);
+  st.tournament.set3WinScore = (s3 === 25) ? 25 : 15;
+  var s5 = parseInt(st.tournament.set5WinScore, 10);
+  st.tournament.set5WinScore = (s5 === 25) ? 25 : 15;
+  return st.tournament;
+}
+
+function getTournament(){
+  return normalizeTournament(state);
+}
+
+function maxSetsInMatch(format){
+  return format === 'bestOf5' ? 5 : 3;
+}
+
+function setsToWinMatch(format){
+  return format === 'bestOf5' ? 3 : 2;
+}
+
+function getSetWinScore(setNum, tournament){
+  var t = tournament || getTournament();
+  var n = parseInt(setNum, 10) || 1;
+  if (t.format === 'bestOf5' && n === 5) return t.set5WinScore || 15;
+  if (n === 3 && t.format === 'bestOf3') return t.set3WinScore || 15;
+  return 25;
+}
+
+function maxSetsForTeamData(){
+  return maxSetsInMatch(getTournament().format);
 }
 
 function loadUiMode(){
@@ -722,11 +1196,12 @@ function saveUiMode(mode){ localStorage.setItem(UI_MODE_KEY, mode); }
 function buildEmptyData(players, matches){
   var data = {};
   var days = DEFAULT_DAYS;
+  var maxSets = maxSetsForTeamData();
   for (var d=0;d<days.length;d++){
     for (var i=0;i<matches.length;i++){
       var key = days[d] + ' - ' + matches[i];
-      data[key] = { '1':{}, '2':{}, '3':{} };
-      for (var s=1; s<=3; s++){
+      data[key] = {};
+      for (var s=1; s<=maxSets; s++){
         var ss = String(s);
         data[key][ss] = {};
         for (var p=0;p<players.length;p++) data[key][ss][players[p].id] = emptyCounters();
@@ -779,6 +1254,7 @@ function buildSyncPayload(){
     activeTeamId: state.activeTeamId,
     teams: state.teams,
     scoreStore: scoreStore,
+    tournament: getTournament(),
     clientUpdatedAt: lastLocalUpdatedAt
   };
 }
@@ -795,6 +1271,7 @@ function applyRemotePayload(remote){
   if (!remote || !Array.isArray(remote.teams)) return false;
   var remoteTs = remote.clientUpdatedAt || 0;
   state = { activeTeamId: remote.activeTeamId, teams: remote.teams };
+  if (remote.tournament) state.tournament = remote.tournament;
   normalizeAllTeams(state);
   if (remote.scoreStore && typeof remote.scoreStore === 'object'){
     scoreStore = remoteTs >= lastLocalUpdatedAt
@@ -808,7 +1285,91 @@ function applyRemotePayload(remote){
   return true;
 }
 
+function compactTeamData(data){
+  if (!data || typeof data !== 'object') return data;
+  var compact = {};
+  for (var matchKey in data){
+    if (!Object.prototype.hasOwnProperty.call(data, matchKey)) continue;
+    var sets = data[matchKey];
+    if (!sets || typeof sets !== 'object') continue;
+    var cSets = {};
+    for (var setKey in sets){
+      if (!Object.prototype.hasOwnProperty.call(sets, setKey)) continue;
+      var players = sets[setKey];
+      if (!players || typeof players !== 'object') continue;
+      var cPlayers = {};
+      for (var pid in players){
+        if (!Object.prototype.hasOwnProperty.call(players, pid)) continue;
+        var raw = players[pid];
+        if (!raw || typeof raw !== 'object') continue;
+        var stripped = {};
+        var any = false;
+        for (var k in raw){
+          if (!Object.prototype.hasOwnProperty.call(raw, k)) continue;
+          if (raw[k]) { stripped[k] = raw[k]; any = true; }
+        }
+        if (any) cPlayers[pid] = stripped;
+      }
+      if (Object.keys(cPlayers).length) cSets[setKey] = cPlayers;
+    }
+    if (Object.keys(cSets).length) compact[matchKey] = cSets;
+  }
+  return compact;
+}
+
+function cloneRotationForUndo(rot){
+  if (!rot) return {};
+  var snap = {
+    offset: rot.offset || 0,
+    base: rot.base ? Object.assign({}, rot.base) : {1:null,2:null,3:null,4:null,5:null,6:null},
+    setterPos: rot.setterPos != null ? rot.setterPos : null,
+    hasBall: rot.hasBall !== false,
+    liberoActive: !!rot.liberoActive,
+    liberoId: rot.liberoId || null,
+    liberoSlot: rot.liberoSlot || null,
+    liberoCourtPos: rot.liberoCourtPos || null,
+    dsActive: !!rot.dsActive,
+    dsId: rot.dsId || null,
+    srMode: !!rot.srMode,
+    srSystem: rot.srSystem || '5-1',
+    subCount: rot.subCount || 0,
+    liberoMB2: rot.liberoMB2 !== false
+  };
+  if (rot.autoSubs && Object.keys(rot.autoSubs).length) snap.autoSubs = Object.assign({}, rot.autoSubs);
+  if (rot.autoSubPos && Object.keys(rot.autoSubPos).length) snap.autoSubPos = Object.assign({}, rot.autoSubPos);
+  if (rot.autoSubOriginals && Object.keys(rot.autoSubOriginals).length) snap.autoSubOriginals = Object.assign({}, rot.autoSubOriginals);
+  if (rot.manualSubPairs && Object.keys(rot.manualSubPairs).length){
+    snap.manualSubPairs = JSON.parse(JSON.stringify(rot.manualSubPairs));
+  }
+  if (rot.srMode && rot.srLayouts && Object.keys(rot.srLayouts).length){
+    snap.srLayouts = JSON.parse(JSON.stringify(rot.srLayouts));
+  }
+  return snap;
+}
+
+function compactStateForStorage(st){
+  if (!st || !Array.isArray(st.teams)) return st;
+  for (var i=0; i<st.teams.length; i++){
+    var team = st.teams[i];
+    if (team.data) team.data = compactTeamData(team.data);
+    if (team.history){
+      for (var h=0; h<team.history.length; h++){
+        if (team.history[h].rotationBefore){
+          team.history[h].rotationBefore = cloneRotationForUndo(team.history[h].rotationBefore);
+        }
+        var he = team.history[h];
+        if (he && he.match != null && he.set != null && !he.scoreKey){
+          he.scoreKey = he.match + ' - Set ' + he.set;
+        }
+      }
+      if (team.history.length > 200) team.history = team.history.slice(-200);
+    }
+  }
+  return st;
+}
+
 function saveState(){
+  compactStateForStorage(state);
   lastLocalUpdatedAt = Date.now();
   var diskState = Object.assign({}, state, { scoreStore: scoreStore, clientUpdatedAt: lastLocalUpdatedAt });
   localStorage.setItem(STORAGE_KEY, JSON.stringify(diskState));
@@ -832,7 +1393,11 @@ function activeTeam(){
 function ensureCounters(team, match, set, playerId){
   if (!team) return;
   if (!team.data) team.data = {};
-  if (!team.data[match]) team.data[match] = { '1':{}, '2':{}, '3':{} };
+  var maxSets = maxSetsForTeamData();
+  if (!team.data[match]) {
+    team.data[match] = {};
+    for (var si=1; si<=maxSets; si++) team.data[match][String(si)] = {};
+  }
   if (!team.data[match][set]) team.data[match][set] = {};
   if (!team.data[match][set][playerId]) team.data[match][set][playerId] = emptyCounters();
   if (team.data[match][set][playerId].serveOut === undefined) team.data[match][set][playerId].serveOut = 0;
@@ -845,6 +1410,10 @@ function normalizeTeam(team){
   if (!Array.isArray(team.matches) || !team.matches.length) team.matches = DEFAULT_MATCHES.slice();
   if (!Array.isArray(team.players)) team.players = [];
   if (!Array.isArray(team.history)) team.history = [];
+  if (!team.liberoByMatch) team.liberoByMatch = {};
+  if (!team.lastLiberoByMatch) team.lastLiberoByMatch = {};
+  ensureSetLineups(team);
+  ensureLineupPresets(team);
   if (!team.data) team.data = {};
   ensureRotation(team);
 
@@ -856,18 +1425,12 @@ function normalizeTeam(team){
       var legacyKey = team.matches[mi];
       if (!team.data[m]) {
         // migrate from legacy key if it exists
-        team.data[m] = team.data[legacyKey] || { '1':{}, '2':{}, '3':{} };
+        team.data[m] = team.data[legacyKey] || {};
       }
-      for (var s=1;s<=3;s++){
+      var maxSets = maxSetsForTeamData();
+      for (var s=1;s<=maxSets;s++){
         var ss = String(s);
         if (!team.data[m][ss]) team.data[m][ss] = {};
-        for (var pi=0; pi<team.players.length; pi++){
-          var p = team.players[pi];
-          var existing = team.data[m][ss][p.id] || {};
-          var merged = Object.assign(emptyCounters(), existing);
-          if (merged.serveOut === undefined) merged.serveOut = 0;
-          team.data[m][ss][p.id] = merged;
-        }
       }
     }
   }
@@ -876,6 +1439,7 @@ function normalizeTeam(team){
 function normalizeAllTeams(st){
   if (!st) st = { activeTeamId:null, teams:[] };
   if (!Array.isArray(st.teams)) st.teams = [];
+  normalizeTournament(st);
   for (var i=0;i<st.teams.length;i++) normalizeTeam(st.teams[i]);
   if (st.teams.length){
     var ok=false;
@@ -903,6 +1467,70 @@ document.addEventListener('DOMContentLoaded', function(){
   if (!teamSelect || !matchSelect || !setSelect || !viewSelect || !statsBody){
     console.error('[VolleyStat] Required DOM elements missing.');
     return;
+  }
+
+  var activePlayerId = '';
+
+  function clearPlayerSelectionForReceive(){
+    activePlayerId = '';
+    var strip = byId('playerStripBtns');
+    if (strip) strip.querySelectorAll('button').forEach(function(b){ b.classList.remove('active'); });
+    renderUnifiedCourt();
+  }
+
+  function syncSetSelectOptions(){
+    var t = getTournament();
+    var max = maxSetsInMatch(t.format);
+    var cur = setSelect.value || '1';
+    setSelect.innerHTML = '';
+    var mobileSet = byId('mobileSetSelect');
+    if (mobileSet) mobileSet.innerHTML = '';
+    for (var i=1; i<=max; i++){
+      var opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = 'Set ' + i;
+      setSelect.appendChild(opt);
+      if (mobileSet){
+        var mopt = document.createElement('option');
+        mopt.value = String(i);
+        mopt.textContent = 'Set ' + i;
+        mobileSet.appendChild(mopt);
+      }
+    }
+    if (parseInt(cur, 10) <= max) setSelect.value = cur;
+    else setSelect.value = '1';
+    if (mobileSet) mobileSet.value = setSelect.value;
+  }
+
+  function syncTournamentUI(){
+    var fmtEl = byId('tournamentFormat');
+    var s3El = byId('tournamentSet3Win');
+    var s5Grp = byId('tournamentSet5Group');
+    var s5El = byId('tournamentSet5Win');
+    var t = getTournament();
+    if (fmtEl) fmtEl.value = t.format;
+    if (s3El) s3El.value = String(t.set3WinScore);
+    if (s5El) s5El.value = String(t.set5WinScore || 15);
+    var bo5 = t.format === 'bestOf5';
+    if (s5Grp) s5Grp.style.display = bo5 ? '' : 'none';
+    var s3Grp = byId('tournamentSet3Group');
+    if (s3Grp) s3Grp.style.display = t.format === 'bestOf3' ? '' : 'none';
+  }
+
+  function onTournamentChange(){
+    var fmtEl = byId('tournamentFormat');
+    var s3El = byId('tournamentSet3Win');
+    var s5El = byId('tournamentSet5Win');
+    var t = getTournament();
+    if (fmtEl) t.format = (fmtEl.value === 'bestOf5') ? 'bestOf5' : 'bestOf3';
+    if (s3El) t.set3WinScore = (parseInt(s3El.value, 10) === 25) ? 25 : 15;
+    if (s5El) t.set5WinScore = (parseInt(s5El.value, 10) === 25) ? 25 : 15;
+    state.tournament = t;
+    syncSetSelectOptions();
+    syncTournamentUI();
+    saveState();
+    renderTable();
+    renderScore();
   }
 
   // Controls
@@ -1077,13 +1705,9 @@ document.addEventListener('DOMContentLoaded', function(){
     if (hintText) hintText.textContent = L.hint;
     if (pressureLegendBar) pressureLegendBar.style.display = (uiMode === 'player') ? 'none' : '';
     if (pressureLegendLabels) pressureLegendLabels.style.display = (uiMode === 'player') ? 'none' : '';
-    if (rotationBtn) rotationBtn.style.display = '';
-    // Score bar rotation button — visible when a team with players exists
+    if (rotationBtn) rotationBtn.style.display = 'none';
     var scoreRotBtn = byId('scoreRotationBtn');
-    if (scoreRotBtn){
-      var hasRosterForRot = !!(activeTeam() && activeTeam().players && activeTeam().players.length);
-      scoreRotBtn.style.display = hasRosterForRot ? '' : 'none';
-    }
+    if (scoreRotBtn) scoreRotBtn.style.display = 'none';
     if (modePlayerBtn) modePlayerBtn.setAttribute('aria-pressed', uiMode === 'player' ? 'true' : 'false');
     if (modeCoachBtn) modeCoachBtn.setAttribute('aria-pressed', uiMode === 'coach' ? 'true' : 'false');
     // Keep score-bar floating toggle in sync
@@ -1110,14 +1734,222 @@ document.addEventListener('DOMContentLoaded', function(){
   if (scoreModePlayerBtn) scoreModePlayerBtn.addEventListener('click', function(){ setUiMode('player'); });
   if (scoreModeCoachBtn)  scoreModeCoachBtn.addEventListener('click',  function(){ setUiMode('coach');  });
 
-  // Rotation FAB visibility
+  // Rotation FAB — hidden when unified court is active (Rules button opens modal)
   function updateRotationFAB(){
     var fab = byId('rotationFAB');
     if (!fab) return;
+    fab.style.display = 'none';
+  }
+
+  function tryUnifiedCourtEntry(team, incomingId){
+    if (!team || !incomingId) return false;
+    ensureRotation(team);
+    var outgoingId = activePlayerId;
+    if (!outgoingId){
+      alert('Select the on-court player coming off, then tap the substitute on the bench.');
+      return false;
+    }
+    var courtPos = getCourtPosForPlayer(team, outgoingId);
+    if (!courtPos){
+      alert('Select a player on court first.');
+      return false;
+    }
+    var baseSlot = courtPosToBaseSlot(team, courtPos);
+    if (!baseSlot) return false;
+    var onCourt = getOnCourtPlayerIdSet(team);
+    if (onCourt[playerIdKey(incomingId)]){
+      alert('That player is already on court.');
+      return false;
+    }
+
+    if (isLiberoPlayer(team, incomingId)){
+      if (!BACK_ROW_POSITIONS[courtPos]){
+        alert('Libero can only replace a back-row player.');
+        return false;
+      }
+      if (!canLiberoReplaceAtPos(team, courtPos, true)){
+        alert('Libero cannot replace the server at pos 1 right now. Open Rules to toggle serving.');
+        return false;
+      }
+      if (team.rotation.liberoActive
+          && isLiberoPlayer(team, incomingId)
+          && isLiberoPlayer(team, outgoingId)
+          && playerIdKey(incomingId) !== playerIdKey(outgoingId)){
+        team.rotation.liberoId = incomingId;
+        saveState();
+        autoSelectServer();
+        renderRotationStrip();
+        if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+        return true;
+      }
+      team.rotation.liberoId = incomingId;
+      if (!activateLiberoAtPos(team, courtPos, incomingId, true)){
+        alert('Could not enter libero at this position.');
+        return false;
+      }
+      saveState();
+      autoSelectServer();
+      renderRotationStrip();
+      if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+      return true;
+    }
+
+    if (team.rotation.liberoActive && playerIdKey(team.rotation.liberoId) === playerIdKey(outgoingId)){
+      deactivateLibero(team);
+    }
+
+    applyManualSub(team, baseSlot, incomingId);
+    autoSelectServer();
+    renderRotationStrip();
+    selectUnifiedPlayer(incomingId);
+    if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+    return true;
+  }
+
+  function selectUnifiedPlayer(pid){
+    activePlayerId = pid || '';
+    renderUnifiedCourt();
+    if (playerStripBtns){
+      playerStripBtns.querySelectorAll('button').forEach(function(b){
+        b.classList.toggle('active', b.dataset.pid === pid);
+      });
+    }
+    if (pid && navigator.vibrate) navigator.vibrate(20);
+  }
+
+  function renderUnifiedCourt(){
+    var panel = byId('unifiedCourtPanel');
+    var grid = byId('unifiedCourtGrid');
+    var bench = byId('unifiedBenchRail');
+    var rotLabel = byId('ucRotLabel');
     var team = activeTeam();
-    var hasRoster = !!(team && team.players && team.players.length);
-    var show = hasRoster;
-    fab.style.display = show ? 'flex' : 'none';
+    if (!panel || !grid || !bench) return;
+
+    if (!team || !team.players || !team.players.length){
+      panel.style.display = 'none';
+      return;
+    }
+    panel.style.display = '';
+    ensureRotation(team);
+    autoFillBaseFromRoster(team);
+    var map = currentPosToPlayerId(team);
+    var onCourt = getOnCourtPlayerIdSet(team);
+    var hasBall = team.rotation.hasBall !== false;
+    var libTargetPos = team.rotation.liberoActive ? getLiberoCourtPos(team) : null;
+    var libId = team.rotation.liberoActive ? team.rotation.liberoId : null;
+
+    if (rotLabel){
+      rotLabel.textContent = 'Rot ' + ((team.rotation.offset || 0) + 1)
+        + ' · ' + (hasBall ? 'Serving' : 'Receiving')
+        + ' · Subs ' + (team.rotation.subCount || 0) + '/15';
+    }
+
+    grid.innerHTML = '';
+    var net = document.createElement('div');
+    net.className = 'uc-net';
+    net.textContent = 'NET';
+    grid.appendChild(net);
+
+    function makeCourtSlot(pos){
+      var pid = map[pos];
+      var player = pid ? (team.players || []).find(function(p){ return p.id === pid; }) : null;
+      var isServer = (pos === 1) && hasBall;
+      var isLib = !!(libId && libTargetPos === pos && playerIdKey(pid) === playerIdKey(libId));
+      var isActive = pid && playerIdKey(pid) === playerIdKey(activePlayerId);
+      var colors = player ? getPosColorsForPlayer(player) : null;
+
+      var slot = document.createElement('div');
+      slot.className = 'uc-slot' + (isActive ? ' active-slot' : '');
+      slot.setAttribute('data-courtpos', String(pos));
+
+      var ball = document.createElement('div');
+      ball.className = 'uc-ball' + (isServer ? ' is-server' : '') + (isLib ? ' is-libero' : '') + (!player ? ' is-empty' : '');
+      if (colors && player && !isLib){
+        ball.style.borderColor = isServer ? '#16a34a' : colors.border;
+        ball.style.background = colors.bg;
+      }
+
+      var posEl = document.createElement('div');
+      posEl.className = 'uc-pos';
+      posEl.style.color = isLib ? LIBERO_COLORS.text : (colors ? colors.text : '#9ca3af');
+      posEl.textContent = isLib ? 'LIB' : (player ? (normPosToken(player.position) || '?') : '—');
+      ball.appendChild(posEl);
+
+      if (player && player.number){
+        var numEl = document.createElement('div');
+        numEl.className = 'uc-num';
+        numEl.style.color = isLib ? LIBERO_COLORS.text : (colors ? colors.text : '#6b7280');
+        numEl.textContent = '#' + player.number;
+        ball.appendChild(numEl);
+      }
+      slot.appendChild(ball);
+
+      var nameEl = document.createElement('div');
+      nameEl.className = 'uc-name';
+      nameEl.textContent = player ? firstName(player.name) : ('Pos ' + pos);
+      slot.appendChild(nameEl);
+
+      slot.addEventListener('click', function(e){
+        e.stopPropagation();
+        if (pid) selectUnifiedPlayer(pid);
+      });
+      addDoubleTapListener(slot, function(e){
+        e.preventDefault();
+        e.stopPropagation();
+        openRotPlayerMenu(slot, pos);
+      });
+
+      return slot;
+    }
+
+    var frontRow = document.createElement('div');
+    frontRow.className = 'uc-row front';
+    [4, 3, 2].forEach(function(pos){ frontRow.appendChild(makeCourtSlot(pos)); });
+    grid.appendChild(frontRow);
+
+    var backRow = document.createElement('div');
+    backRow.className = 'uc-row back';
+    [5, 6, 1].forEach(function(pos){ backRow.appendChild(makeCourtSlot(pos)); });
+    grid.appendChild(backRow);
+
+    bench.innerHTML = '';
+    var benchPlayers = (team.players || []).slice().sort(sortPlayers);
+    var benchCount = 0;
+    benchPlayers.forEach(function(p){
+      if (onCourt[playerIdKey(p.id)]) return;
+      if (isLiberoPlayer(team, p.id)) return;
+      benchCount++;
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'player-pill';
+      btn.dataset.pid = p.id;
+      var label = (p.number ? '#'+p.number+' ' : '') + firstName(p.name);
+      if (p.position) label += ' · ' + normPosToken(p.position);
+      btn.textContent = label;
+      var isActive = playerIdKey(p.id) === playerIdKey(activePlayerId);
+      if (isActive) btn.classList.add('active');
+      var isLibDes = isLiberoPlayer(team, p.id);
+      applyPlayerPillStyle(btn, p, { bench: true, active: isActive, libero: isLibDes });
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        if (activePlayerId && getCourtPosForPlayer(team, activePlayerId)
+            && playerIdKey(p.id) !== playerIdKey(activePlayerId)){
+          tryUnifiedCourtEntry(team, p.id);
+          return;
+        }
+        selectUnifiedPlayer(p.id);
+      });
+      bench.appendChild(btn);
+    });
+    if (!benchCount){
+      bench.innerHTML = '<div style="font-size:11px;color:#9ca3af;font-weight:700;">No bench players available</div>';
+    }
+
+    syncLiberoChips(team);
+    var libAuto = byId('ucLiberoAutoToggle');
+    if (libAuto){
+      libAuto.checked = team.rotation.liberoAutoOnRotate !== false;
+    }
   }
 
   function updateOnboardingAndControls(){
@@ -1151,12 +1983,16 @@ document.addEventListener('DOMContentLoaded', function(){
     setDisabled(setSelect, !hasTeam);
     setDisabled(viewSelect, !hasTeam);
     setDisabled(rosterBtn, !hasTeam);
-    setDisabled(undoBtn, !hasRoster);
+    setDisabled(undoBtn, !hasRoster || !canUndoCurrentContext(team));
+    var ucUndo = byId('ucUndoBtn');
+    if (ucUndo) ucUndo.disabled = !hasRoster || !canUndoCurrentContext(team);
     setDisabled(exportBtn, !hasRoster);
     setDisabled(exportName, !hasTeam);
     setToolbarStatsEnabled(hasRoster);
 
     if (hasTeam) syncExportNameDefault();
+    var playerStripEl = byId('playerStrip');
+    if (playerStripEl) playerStripEl.style.display = 'none';
   }
 
   // Export confirm modal plumbing
@@ -1290,7 +2126,7 @@ document.addEventListener('DOMContentLoaded', function(){
   function getAggregateCounters(playerId){
     var team = activeTeam();
     if (!team) return emptyCounters();
-    var view = viewSelect.value || 'tournament';
+    var view = viewSelect.value || 'set';
     var matchKey = getMatchKey();
     var set = setSelect.value || '1';
 
@@ -1727,11 +2563,12 @@ document.addEventListener('DOMContentLoaded', function(){
     }
 
     // Snapshot state BEFORE the change so undo can fully restore it
+    var _scoreKey = getScoreKey();
     var _scoreBefore = { our: (currentScore().our || 0), opp: (currentScore().opp || 0) };
-    var _rotBefore   = JSON.parse(JSON.stringify(team.rotation || {}));
+    var _rotBefore   = cloneRotationForUndo(team.rotation);
 
     counters[action] = nz(counters[action],0) + 1;
-    team.history.push({ match:match, set:set, playerId:playerId, action:action, ts:Date.now(),
+    team.history.push({ match:match, set:set, scoreKey:_scoreKey, playerId:playerId, action:action, ts:Date.now(),
                         scoreBefore:_scoreBefore, rotationBefore:_rotBefore });
 
     // Auto-increment linked error counters
@@ -1744,8 +2581,8 @@ document.addEventListener('DOMContentLoaded', function(){
       team.history.push({ match:match, set:set, playerId:playerId, action:linkedError, ts:Date.now(), auto:true });
     }
 
-    // Cap history at 500 entries to keep data size manageable
-    if (team.history.length > 500) team.history = team.history.slice(-500);
+    // Cap history at 200 entries to keep data size manageable
+    if (team.history.length > 200) team.history = team.history.slice(-200);
 
     // Auto-adjust score based on action (only for primary action, not auto-linked errors)
     autoAdjustScore(action);
@@ -1771,7 +2608,9 @@ document.addEventListener('DOMContentLoaded', function(){
       // Lost the rally → opponent now serves → auto-enter serve receive
       team.rotation.hasBall = false;
       team.rotation.srMode  = true;
+      clearPlayerSelectionForReceive();
     }
+    enforceServingReceiveMode(team);
 
     saveState();
     closePicker();
@@ -1791,6 +2630,11 @@ document.addEventListener('DOMContentLoaded', function(){
   // Picker
   function openPicker(){
     if (!pickerBackdrop || !playerGrid) return;
+    var team = activeTeam();
+    if (team && pendingAction && SERVE_ACTIONS[pendingAction]){
+      ensureRotation(team);
+      if (team.rotation.hasBall) autoSelectServer();
+    }
     buildPlayerGrid();
     // Show/update quick-record banner for currently selected player
     var quickBar = byId('pickerQuickBar');
@@ -1798,7 +2642,6 @@ document.addEventListener('DOMContentLoaded', function(){
       if (selectionMode === 'rotationManualSub' || selectionMode === 'rotationAutoSub' || selectionMode === 'setBaseAssign'){
         quickBar.style.display = 'none';
       } else {
-      var team = activeTeam();
       var ap = null;
       if (team && activePlayerId){
         for (var qi=0;qi<team.players.length;qi++) if(team.players[qi].id===activePlayerId){ ap=team.players[qi]; break; }
@@ -1806,7 +2649,12 @@ document.addEventListener('DOMContentLoaded', function(){
       if (ap){
         quickBar.style.display = 'block';
         var qLabel = byId('pickerQuickLabel');
-        if (qLabel) qLabel.textContent = 'Record for: ' + (ap.number?'#'+ap.number+' ':'') + ap.name + ' (last selected)';
+        var suffix = '(last selected)';
+        if (team){
+          ensureRotation(team);
+          if (team.rotation.hasBall && getServerPlayerId(team) === activePlayerId) suffix = '(Server)';
+        }
+        if (qLabel) qLabel.textContent = 'Record for: ' + (ap.number?'#'+ap.number+' ':'') + ap.name + ' ' + suffix;
       } else {
         quickBar.style.display = 'none';
       }
@@ -2020,7 +2868,6 @@ document.addEventListener('DOMContentLoaded', function(){
   if (pickerBackdrop) pickerBackdrop.addEventListener('click', function(e){ if (e.target === pickerBackdrop) closePicker(); });
 
   // Actions that auto-assign to the active player (no picker required)
-  var SERVE_ACTIONS = { serve1:1, serve2:1, serve3:1, ace:1, serveOut:1 };
 
   // ── Server confirmation toast ─────────────────────────────────────────────
   var _serverConfirmTimer   = null;
@@ -2079,18 +2926,42 @@ document.addEventListener('DOMContentLoaded', function(){
     openPicker();
   });
 
-  function handleServeAction(action){
-    if (!activePlayerId) autoSelectServer();
-    if (activePlayerId){
-      showServerConfirm(action, activePlayerId);
+  function flashSelectPlayer(){
+    var banner = document.getElementById('statBanner');
+    if (banner){
+      clearTimeout(_statBannerTimer);
+      banner.textContent = 'Select a player first';
+      banner.classList.add('error-banner', 'visible');
+      _statBannerTimer = setTimeout(function(){
+        banner.classList.remove('visible', 'error-banner');
+      }, 1200);
     } else {
-      // No server known at all — open picker
-      pendingAction = action;
-      selectionMode = null;
-      selectionPayload = null;
-      if (pickerTitle) pickerTitle.textContent = 'Select Server — ' + prettyAction(action);
-      openPicker();
+      alert('Select a player first');
     }
+  }
+
+  function recordStatAction(action){
+    var team = activeTeam();
+    if (!team) return;
+    ensureRotation(team);
+    if (SERVE_ACTIONS[action]){
+      if (team.rotation.hasBall === false){
+        flashSelectPlayer();
+        return;
+      }
+      autoSelectServer();
+      if (!activePlayerId){
+        flashSelectPlayer();
+        return;
+      }
+      recordEvent(action, activePlayerId);
+      return;
+    }
+    if (!activePlayerId){
+      flashSelectPlayer();
+      return;
+    }
+    recordEvent(action, activePlayerId);
   }
 
   // Desktop toolbar stat buttons
@@ -2100,13 +2971,7 @@ document.addEventListener('DOMContentLoaded', function(){
       if (this.disabled) return;
       _lastStatBtn = this;
       var action = this.getAttribute('data-action');
-      if (SERVE_ACTIONS[action]){ handleServeAction(action); return; }
-      // All non-serve stats always open the picker for explicit player selection
-      pendingAction = action;
-      selectionMode = null;
-      selectionPayload = null;
-      if (pickerTitle) pickerTitle.textContent = 'Select Player — ' + prettyAction(action);
-      openPicker();
+      recordStatAction(action);
     });
   }
 
@@ -2117,13 +2982,7 @@ document.addEventListener('DOMContentLoaded', function(){
       if (this.disabled) return;
       _lastStatBtn = this;
       var action = this.getAttribute('data-action');
-      if (SERVE_ACTIONS[action]){ handleServeAction(action); return; }
-      // All non-serve stats always open the picker for explicit player selection
-      pendingAction = action;
-      selectionMode = null;
-      selectionPayload = null;
-      if (pickerTitle) pickerTitle.textContent = 'Select Player — ' + prettyAction(action);
-      openPicker();
+      recordStatAction(action);
     });
   }
 
@@ -2157,10 +3016,12 @@ document.addEventListener('DOMContentLoaded', function(){
       }
     }
     if (team.rotation.liberoActive){
-      var libId = team.rotation.liberoId || getLiberoId(team);
-      if (pid === libId){
-        var libTargetPos = (team.rotation.liberoSlot === 'MB2') ? getMB2CurrentPos(team) : getMB1CurrentPos(team);
-        if (libTargetPos === courtPos) return team.rotation.liberoSlot || 'MB';
+      var libId = team.rotation.liberoId || getLiberoDesignations(team)[0];
+      if (libId && playerIdKey(pid) === playerIdKey(libId)){
+        var libTargetPos = getLiberoCourtPos(team);
+        if (libTargetPos === courtPos){
+          return team.rotation.liberoSlot || 'LIB';
+        }
       }
     }
     return null;
@@ -2245,77 +3106,185 @@ document.addEventListener('DOMContentLoaded', function(){
       return;
     }
     btn.style.display = '';
-    var target = getLiberoDisplayTarget(team);
-    var libId = getLiberoId(team);
-    if (!libId){
+    var designations = getLiberoDesignations(team);
+    if (!designations.length){
       btn.disabled = true;
-      btn.textContent = 'No Libero';
+      btn.textContent = 'Select Libero';
       btn.style.background = '';
       btn.style.color = '';
       btn.style.borderColor = '';
+      btn.title = 'Tap L1/L2 chips above to designate up to 2 liberos';
       return;
     }
     btn.disabled = false;
-    var suffix = target ? (' (' + target + ')') : '';
+    var courtPos = getLiberoCourtPos(team);
+    var suffix = courtPos ? (' · Pos ' + courtPos) : (getLiberoDisplayTarget(team) ? (' · ' + getLiberoDisplayTarget(team)) : '');
     if (team.rotation.liberoActive){
-      btn.textContent = 'Libero ✓' + suffix;
-      btn.style.background = '#d97706';
-      btn.style.color = '#fff';
-      btn.style.borderColor = '#b45309';
-      btn.title = target
-        ? ('Libero on court for ' + target + ' — tap to remove')
-        : 'Libero on court — tap to remove';
+      if (designations.length > 1){
+        btn.textContent = 'Swap Libero';
+        btn.title = 'Switch to the other designated libero (no sub charged)';
+      } else {
+        btn.textContent = 'Libero Out' + suffix;
+        btn.title = 'Remove libero from court';
+      }
+      btn.style.background = LIBERO_COLORS.onCourtBg;
+      btn.style.color = LIBERO_COLORS.onCourtText;
+      btn.style.borderColor = LIBERO_COLORS.onCourtBorder;
     } else {
       btn.textContent = 'Libero In' + suffix;
       btn.style.background = '';
       btn.style.color = '';
       btn.style.borderColor = '';
-      btn.title = target
-        ? ('Put libero on court for ' + target + ' at back row (pos 1, 5, or 6)')
-        : 'Put libero on court when a middle reaches the back row';
+      btn.title = 'Put libero on court at back row — or double-tap a back-row player';
     }
   }
 
   function toggleLiberoStart(team){
     ensureRotation(team);
     autoFillBaseFromRoster(team);
+    var designations = getLiberoDesignations(team);
     if (team.rotation.liberoActive){
+      if (designations.length > 1 && swapActingLibero(team)) return;
       deactivateLibero(team);
       return;
     }
-    if (!getLiberoId(team)){
-      alert('No libero on roster (position LIB).');
+    if (!designations.length){
+      alert('Designate at least one libero (tap L1 / L2 chips in Rotation).');
       return;
     }
-    if (tryActivateLibero(team, undefined, true)){
-      return;
-    }
+    if (!team.rotation.liberoId) team.rotation.liberoId = designations[0];
+    if (tryActivateLibero(team, undefined, true)) return;
     var off = team.rotation.offset || 0;
-    var mb2Pos = rotatedPos(3, off);
-    var mb1Pos = rotatedPos(6, off);
-    if (isMiddleBackRowPos(mb2Pos) && shouldSkipLiberoForMiddle(team, 'MB2', mb2Pos, false)){
-      alert('MB2 is at pos 1 with “I will serve” on — libero enters on the next rotation (pos 5 or 6), or turn off “I will serve” on MB2.');
+    var backPos = [1, 5, 6];
+    for (var bp=0; bp<backPos.length; bp++){
+      if (activateLiberoAtPos(team, backPos[bp], null, false)) return;
+    }
+    alert('No eligible back-row spot for libero right now. Double-tap a back-row player or rotate.');
+  }
+
+  function syncLiberoChips(team){
+    var row = byId('liberoSelectRow');
+    var targets = [byId('liberoChips'), byId('unifiedLiberoChips')].filter(Boolean);
+    if (!targets.length) return;
+    if (_setBaseMode || !team){
+      if (row) row.style.display = 'none';
+      targets.forEach(function(t){ t.innerHTML = ''; });
       return;
     }
-    if (isMiddleBackRowPos(mb1Pos) && shouldSkipLiberoForMiddle(team, 'MB1', mb1Pos, false)){
-      alert('MB1 is at pos 1 with “I will serve” on — libero enters on the next rotation (pos 5 or 6), or turn off “I will serve” on MB1.');
-      return;
+    if (row) row.style.display = 'flex';
+    var matchKey = getMatchKey();
+    var des = getLiberoDesignations(team, matchKey);
+    while (des.length < 2) des.push(null);
+
+    function liberoChipClick(slotIndex, pid, player){
+      return function(e){
+        e.stopPropagation();
+        ensureRotation(team);
+        var wasActive = !!team.rotation.liberoActive;
+        var actingId = team.rotation.liberoId;
+        if (player && wasActive && actingId && playerIdKey(pid) !== playerIdKey(actingId)){
+          team.rotation.liberoId = pid;
+          saveState();
+          updateLiberoBtn(team);
+          renderRotationWheel();
+          renderUnifiedCourt();
+          return;
+        }
+        if (player && !wasActive){
+          team.rotation.liberoId = pid;
+          if (!tryActivateLibero(team, undefined, true)){
+            for (var bp=0; bp<3; bp++){
+              var pos = [1,5,6][bp];
+              if (activateLiberoAtPos(team, pos, pid, false)) break;
+            }
+          }
+          saveState();
+          updateLiberoBtn(team);
+          renderRotationWheel();
+          renderUnifiedCourt();
+          return;
+        }
+        var nextDes = cycleLiberoSlot(team, matchKey, slotIndex);
+        team.rotation.liberoId = nextDes[0] || null;
+        if (wasActive && team.rotation.liberoId) tryActivateLibero(team, undefined, true);
+        saveState();
+        updateLiberoBtn(team);
+        renderRotationWheel();
+        renderUnifiedCourt();
+      };
     }
-    if ((isMiddleBackRowPos(mb2Pos) && !liberoEnabledForMiddle(team, 'MB2'))
-        || (isMiddleBackRowPos(mb1Pos) && !liberoEnabledForMiddle(team, 'MB1'))){
-      alert('Libero is off for the middle in the back row — middle plays back row. Turn on “Libero replaces back row” on that middle, or add a LIB player to the roster.');
-      return;
-    }
-    if (isMiddleBackRowPos(mb2Pos) || isMiddleBackRowPos(mb1Pos)){
-      alert('A middle is in the back row but libero could not be placed. Check that a player with position LIB is on the roster.');
-      return;
-    }
-    var target = getLiberoDisplayTarget(team);
-    if (target){
-      alert(target + ' is in the front row. Libero will enter automatically on the next back-row rotation.');
+
+    targets.forEach(function(container){
+      container.innerHTML = '';
+      for (var slot=0; slot<2; slot++){
+        (function(slotIndex){
+          var pid = des[slotIndex];
+          var player = pid ? (team.players || []).find(function(p){ return p.id === pid; }) : null;
+          var onCourt = team.rotation.liberoActive && pid && playerIdKey(pid) === playerIdKey(team.rotation.liberoId);
+          var chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'libero-chip' + (onCourt ? ' on-court' : '') + (player ? '' : ' empty');
+          chip.title = player
+            ? (onCourt ? 'On court — tap to swap/cycle' : 'Select on-court player, then tap to sub in')
+            : 'Tap to assign libero ' + (slotIndex + 1);
+          chip.textContent = player
+            ? ((onCourt ? '🏐 ' : '') + (player.number ? '#'+player.number+' ' : '') + firstName(player.name))
+            : ('L' + (slotIndex + 1) + ' +');
+          var onLibChipClick = liberoChipClick(slotIndex, pid, player);
+          chip.addEventListener('click', function(e){
+            if (player && pid && activePlayerId && getCourtPosForPlayer(team, activePlayerId)
+                && playerIdKey(pid) !== playerIdKey(activePlayerId)){
+              e.stopPropagation();
+              tryUnifiedCourtEntry(team, pid);
+              return;
+            }
+            onLibChipClick(e);
+          });
+          container.appendChild(chip);
+        })(slot);
+      }
+    });
+  }
+
+  function syncLiberoSelect(team){ syncLiberoChips(team); }
+
+  function saveLiberoDesignation(team, playerId){
+    if (!team) return;
+    ensureRotation(team);
+    var matchKey = getMatchKey();
+    var wasActive = !!team.rotation.liberoActive;
+    if (wasActive) deactivateLibero(team);
+    if (playerId && isValidLiberoCandidate(team, playerId)){
+      saveLiberoDesignations(team, matchKey, [playerId]);
+      team.rotation.liberoId = playerId;
     } else {
-      alert('No middle is in the back row yet. Libero will enter on the next rotation.');
+      saveLiberoDesignations(team, matchKey, []);
+      team.rotation.liberoId = null;
     }
+    saveState();
+    syncLiberoChips(team);
+    updateLiberoBtn(team);
+    if (wasActive && team.rotation.liberoId) tryActivateLibero(team, undefined, true);
+    renderRotationWheel();
+    renderTable();
+  }
+
+  function applyLiberoForCurrentMatch(team){
+    if (!team) return;
+    ensureRotation(team);
+    var matchKey = getMatchKey();
+    if (team.rotation.liberoActive) deactivateLibero(team);
+    var des = getLiberoDesignations(team, matchKey);
+    if (!des.length){
+      var legacy = getLegacyLiberoId(team);
+      if (legacy){
+        saveLiberoDesignations(team, matchKey, [legacy]);
+        des = [legacy];
+      }
+    }
+    team.rotation.liberoId = des[0] || null;
+    syncLiberoChips(team);
+    updateLiberoBtn(team);
   }
 
   function syncRotationModalFooter(){
@@ -2341,6 +3310,77 @@ document.addEventListener('DOMContentLoaded', function(){
       if (doneBtn) doneBtn.style.display = '';
     }
     updateLiberoBtn(activeTeam());
+    syncLiberoSelect(activeTeam());
+  }
+
+  function syncLineupPresetSelect(selectEl, team){
+    if (!selectEl) return;
+    var cur = selectEl.value;
+    selectEl.innerHTML = '<option value="">— Load preset —</option>';
+    if (!team) return;
+    ensureLineupPresets(team);
+    team.lineupPresets.forEach(function(p){
+      var opt = document.createElement('option');
+      opt.value = p.id;
+      var rot = (p.startOffset || 0) + 1;
+      opt.textContent = p.name + ' (Rot ' + rot + ')';
+      selectEl.appendChild(opt);
+    });
+    if (cur && getLineupPreset(team, cur)) selectEl.value = cur;
+  }
+
+  function applyLineupPlanToSetBaseDraft(base, startRot){
+    _setBaseDraft = courtLineupFromBaseObj(base);
+    var rotSel = byId('setBaseStartRot');
+    if (rotSel) rotSel.value = String(startRot || 1);
+    renderSetBasePanel();
+  }
+
+  function loadSelectedSetBasePreset(){
+    var team = activeTeam();
+    if (!team) return;
+    var sel = byId('setBasePresetSelect');
+    var preset = getLineupPreset(team, sel ? sel.value : '');
+    if (!preset){ alert('Choose a preset to load.'); return; }
+    applyLineupPlanToSetBaseDraft(preset.base, (preset.startOffset || 0) + 1);
+  }
+
+  function saveCurrentSetBaseAsPreset(){
+    var team = activeTeam();
+    if (!team) return;
+    var missing = [];
+    for (var cp=1; cp<=6; cp++){ if (!_setBaseDraft[cp]) missing.push(cp); }
+    if (missing.length){
+      alert('Assign all 6 positions before saving a preset.');
+      return;
+    }
+    var name = window.prompt('Preset name (e.g. Set 1 starters, Set 2 rotation 4):');
+    if (!name || !name.trim()) return;
+    ensureRotation(team);
+    var base = {};
+    for (var courtPos=1; courtPos<=6; courtPos++){
+      base[inverseBaseForCurrentPos(courtPos, 0)] = _setBaseDraft[courtPos];
+    }
+    var startRotEl = byId('setBaseStartRot');
+    var startRot = startRotEl ? startRotEl.value : '1';
+    saveLineupPreset(team, name.trim(), base, startRot);
+    saveState();
+    syncLineupPresetSelect(byId('setBasePresetSelect'), team);
+    syncLineupPresetSelect(byId('nextSetPresetSelect'), team);
+    alert('Saved preset "' + name.trim() + '".');
+  }
+
+  function copyPreviousSetIntoSetBase(){
+    var team = activeTeam();
+    if (!team) return;
+    var matchKey = getMatchKey();
+    var setNum = setSelect ? setSelect.value : '1';
+    var prev = getPreviousSetLineup(team, matchKey, setNum);
+    if (!prev || !prev.base){
+      alert('No saved lineup for the previous set in this match.');
+      return;
+    }
+    applyLineupPlanToSetBaseDraft(prev.base, (prev.startOffset || 0) + 1);
   }
 
   function enterSetBaseMode(){
@@ -2353,7 +3393,21 @@ document.addEventListener('DOMContentLoaded', function(){
     autoFillBaseFromRoster(team);
     closeRotPlayerMenu();
     _setBaseMode = true;
-    _setBaseDraft = lineupFromBase(team);
+    var matchKey = getMatchKey();
+    var setNum = setSelect ? setSelect.value : '1';
+    var plan = getSetLineup(team, matchKey, setNum);
+    var rotSel = byId('setBaseStartRot');
+    if (rotSel){
+      rotSel.value = String(plan ? ((plan.startOffset || 0) + 1) : ((team.rotation.offset || 0) + 1));
+    }
+    if (plan && plan.base){
+      _setBaseDraft = courtLineupFromBaseObj(plan.base);
+    } else if (team.savedBase){
+      _setBaseDraft = courtLineupFromBaseObj(team.savedBase);
+    } else {
+      _setBaseDraft = lineupFromBase(team);
+    }
+    syncLineupPresetSelect(byId('setBasePresetSelect'), team);
     syncRotationModalFooter();
     renderSetBasePanel();
     var panel = document.getElementById('setBasePanel');
@@ -2455,6 +3509,14 @@ document.addEventListener('DOMContentLoaded', function(){
     }
     resetRotationRuntimeState(team);
     team.savedBase = JSON.parse(JSON.stringify(team.rotation.base));
+    var matchKey = getMatchKey();
+    var setNum = setSelect ? setSelect.value : '1';
+    var startRotEl = byId('setBaseStartRot');
+    var startRot = startRotEl ? startRotEl.value : String((team.rotation.offset || 0) + 1);
+    saveSetLineup(team, matchKey, setNum, team.rotation.base, startRot);
+    team.rotation.offset = Math.max(0, Math.min(5, (parseInt(startRot, 10) || 1) - 1));
+    applyRulesForOffset(team, team.rotation.offset || 0);
+    enforceServingReceiveMode(team);
     saveState();
     exitSetBaseMode();
     autoSelectServer();
@@ -2478,19 +3540,20 @@ document.addEventListener('DOMContentLoaded', function(){
   }
 
   function positionRotPlayerMenu(menu, anchor){
-    var wrap = document.getElementById('rotationCourtWrap');
-    if (!wrap || !anchor) return;
+    if (!menu || !anchor) return;
+    if (menu.parentElement !== document.body) document.body.appendChild(menu);
+    menu.style.position = 'fixed';
+    menu.style.zIndex = '1400';
     var aRect = anchor.getBoundingClientRect();
-    var wRect = wrap.getBoundingClientRect();
     menu.style.visibility = 'hidden';
     menu.classList.add('open');
-    var top = aRect.bottom - wRect.top + 6;
-    var left = aRect.left - wRect.left + (aRect.width / 2) - (menu.offsetWidth / 2);
-    left = Math.max(4, Math.min(left, wRect.width - menu.offsetWidth - 4));
-    if (top + menu.offsetHeight > wRect.height - 4){
-      top = aRect.top - wRect.top - menu.offsetHeight - 6;
+    var top = aRect.bottom + 6;
+    var left = aRect.left + (aRect.width / 2) - (menu.offsetWidth / 2);
+    left = Math.max(8, Math.min(left, window.innerWidth - menu.offsetWidth - 8));
+    if (top + menu.offsetHeight > window.innerHeight - 8){
+      top = aRect.top - menu.offsetHeight - 6;
     }
-    menu.style.top = Math.max(4, top) + 'px';
+    menu.style.top = Math.max(8, top) + 'px';
     menu.style.left = left + 'px';
     menu.style.visibility = 'visible';
   }
@@ -2524,6 +3587,7 @@ document.addEventListener('DOMContentLoaded', function(){
     saveState();
     closeRotPlayerMenu();
     renderRotationWheel();
+    renderRotationStrip();
     renderTable();
   }
 
@@ -2603,6 +3667,27 @@ document.addEventListener('DOMContentLoaded', function(){
       openRotationSubPicker(team, baseSlot, 'rotationManualSub', 'sub');
     });
     opts.appendChild(subBtn);
+
+    if (BACK_ROW_POSITIONS[baseCourtPos] && getLiberoDesignations(team).length){
+      var libPosBtn = document.createElement('button');
+      libPosBtn.type = 'button';
+      libPosBtn.className = 'rot-menu-opt-btn';
+      libPosBtn.textContent = 'Libero In · Pos ' + baseCourtPos;
+      libPosBtn.addEventListener('click', function(e){
+        e.stopPropagation();
+        if (!team.rotation.liberoId) team.rotation.liberoId = getLiberoDesignations(team)[0];
+        if (activateLiberoAtPos(team, baseCourtPos, null, true)){
+          saveState();
+          closeRotPlayerMenu();
+          renderRotationWheel();
+          renderTable();
+        } else {
+          alert('Libero cannot replace server at pos 1 right now.');
+        }
+      });
+      opts.appendChild(libPosBtn);
+    }
+
     if (_rotMenuExpand === 'sub'){
       var subExpand = document.createElement('div');
       subExpand.className = 'rot-menu-expand';
@@ -2881,19 +3966,10 @@ document.addEventListener('DOMContentLoaded', function(){
 
     var mb1Pos = getMB1CurrentPos(team);
     var mb2Pos = getMB2CurrentPos(team);
-    var libId = team.rotation.liberoId || getLiberoId(team);
-    var libTargetPos = team.rotation.liberoActive
-      ? ((team.rotation.liberoSlot === 'MB2') ? mb2Pos : mb1Pos)
-      : null;
+    var libId = team.rotation.liberoId || getLiberoDesignations(team)[0];
+    var libTargetPos = team.rotation.liberoActive ? getLiberoCourtPos(team) : null;
 
-    var POS_COLORS = {
-      'S':   { bg:'#dbeafe', border:'#2563eb', text:'#1e3a8a' },
-      'OH':  { bg:'#dcfce7', border:'#16a34a', text:'#14532d' },
-      'MB':  { bg:'#ede9fe', border:'#7c3aed', text:'#5b21b6' },
-      'RS':  { bg:'#ffedd5', border:'#ea580c', text:'#7c2d12' },
-      'LIB': { bg:'#fef3c7', border:'#d97706', text:'#92400e' },
-      'DS':  { bg:'#ccfbf1', border:'#0d9488', text:'#134e4a' }
-    };
+    var POS_COLORS_LOCAL = POS_COLORS;
 
     // ── Court layout with volleyball player icons (both SR and non-SR) ────────────
     function makeCircleSlot(pos){
@@ -2901,7 +3977,7 @@ document.addEventListener('DOMContentLoaded', function(){
       var player = pid ? (team.players||[]).find(function(p){ return p.id === pid; }) : null;
       var name = player ? player.name : '';
       var playerPos = player ? normPosToken(player.position) : '';
-      var colors = playerPos ? POS_COLORS[posColorKey(playerPos)] : null;
+      var colors = playerPos ? POS_COLORS_LOCAL[posColorKey(playerPos)] : null;
       var subBaseLabel = pid ? getCourtSubBaseLabel(team, pos, pid) : null;
       var baseSlot = courtPosToBaseSlot(team, pos);
 
@@ -2927,12 +4003,15 @@ document.addEventListener('DOMContentLoaded', function(){
         ball.style.backgroundColor = colors.bg;
       }
       if (isServer && pid){ ball.style.borderColor = '#16a34a'; }
-      if (isLibActive){ ball.style.borderColor = '#d97706'; }
+      if (isLibActive){
+        ball.style.borderColor = LIBERO_COLORS.border;
+        ball.style.background = LIBERO_COLORS.bg;
+      }
 
       var posLabel = document.createElement('div');
       posLabel.className = 'rot-pos-label';
       posLabel.style.color = colors && pid ? colors.text : '#d1d5db';
-      if (isLibActive){ posLabel.style.color = '#92400e'; posLabel.textContent = 'LIB'; }
+      if (isLibActive){ posLabel.style.color = LIBERO_COLORS.text; posLabel.textContent = 'LIB'; }
       else if (isServer && pid){ posLabel.style.color = '#15803d'; posLabel.textContent = playerPos || '?'; }
       else { posLabel.textContent = pid ? (playerPos || '?') : '—'; }
       ball.appendChild(posLabel);
@@ -2941,7 +4020,7 @@ document.addEventListener('DOMContentLoaded', function(){
         var numEl = document.createElement('div');
         numEl.className = 'rot-ball-num';
         numEl.style.color = colors && pid ? colors.text : '#6b7280';
-        if (isLibActive) numEl.style.color = '#92400e';
+        if (isLibActive) numEl.style.color = LIBERO_COLORS.text;
         if (isServer && pid) numEl.style.color = '#15803d';
         numEl.textContent = '#' + player.number;
         ball.appendChild(numEl);
@@ -3184,6 +4263,7 @@ document.addEventListener('DOMContentLoaded', function(){
     saveState();
     updateSubCountDisplay(team);
     updateLiberoBtn(team);
+    syncLiberoSelect(team);
     if (reopenSlot){
       _rotMenuBaseSlot = reopenSlot;
       _rotMenuExpand = reopenExpand;
@@ -3212,6 +4292,38 @@ document.addEventListener('DOMContentLoaded', function(){
   // Wire rotation FAB
   var rotationFAB = byId('rotationFAB');
   if (rotationFAB) rotationFAB.addEventListener('click', openRotation);
+
+  var ucRulesBtn = byId('ucRulesBtn');
+  var ucUndoBtn = byId('ucUndoBtn');
+  var ucNextSetBtn = byId('ucNextSetBtn');
+  if (ucRulesBtn) ucRulesBtn.addEventListener('click', openRotation);
+  if (ucUndoBtn) ucUndoBtn.addEventListener('click', function(){
+    var mUndo = byId('mobileUndoBtn');
+    if (mUndo) mUndo.click();
+    else if (undoBtn) undoBtn.click();
+  });
+  if (ucNextSetBtn) ucNextSetBtn.addEventListener('click', function(){ if (window._vsNextSet) window._vsNextSet(); });
+
+  var ucRotForward = byId('ucRotForward');
+  var ucRotBack = byId('ucRotBack');
+  if (ucRotForward) ucRotForward.addEventListener('click', function(){
+    var team = activeTeam();
+    if (!team) return;
+    advanceRotation(team);
+    saveState();
+    autoSelectServer();
+    renderRotationStrip();
+    if (rotationBackdrop && rotationBackdrop.style.display !== 'none') renderRotationWheel();
+  });
+  if (ucRotBack) ucRotBack.addEventListener('click', function(){
+    var team = activeTeam();
+    if (!team) return;
+    retreatRotation(team);
+    saveState();
+    autoSelectServer();
+    renderRotationStrip();
+    if (rotationBackdrop && rotationBackdrop.style.display !== 'none') renderRotationWheel();
+  });
 
   document.addEventListener('click', function(e){
     if (!_rotMenuBaseSlot) return;
@@ -3294,6 +4406,7 @@ document.addEventListener('DOMContentLoaded', function(){
     advanceRotation(team);
     team.rotation.hasBall = true;
     team.rotation.srMode  = false;
+    enforceServingReceiveMode(team);
     autoSelectServer();
     saveState();
     renderRotationStrip();
@@ -3310,9 +4423,9 @@ document.addEventListener('DOMContentLoaded', function(){
     if (navigator.vibrate) navigator.vibrate([25, 60, 25]);
     playStatClick('rally');
     adjScore('opp', 1);
-    // Opponent now has (or keeps) the serve — we receive
     team.rotation.hasBall = false;
     team.rotation.srMode  = true;
+    enforceServingReceiveMode(team);
     saveState();
     renderRotationStrip();
     if (rotationBackdrop && rotationBackdrop.style.display !== 'none') renderRotationWheel();
@@ -3326,22 +4439,19 @@ document.addEventListener('DOMContentLoaded', function(){
   var scoreRotationBtn = byId('scoreRotationBtn');
   if (scoreRotationBtn) scoreRotationBtn.addEventListener('click', openRotation);
 
-  // Score bar possession pill — tap to toggle serving/receiving
+  // Score bar + stat panel possession — tap to toggle serving/receiving
   var scorePossessionPill = byId('scorePossessionPill');
-  if (scorePossessionPill) scorePossessionPill.addEventListener('click', function(){
+  if (scorePossessionPill) scorePossessionPill.addEventListener('click', togglePossession);
+  var statPossessionBtn = byId('statPossessionBtn');
+  if (statPossessionBtn) statPossessionBtn.addEventListener('click', togglePossession);
+
+  var ucLiberoAuto = byId('ucLiberoAutoToggle');
+  if (ucLiberoAuto) ucLiberoAuto.addEventListener('change', function(){
     var team = activeTeam();
     if (!team) return;
     ensureRotation(team);
-    team.rotation.hasBall = !team.rotation.hasBall;
-    if (!team.rotation.hasBall){
-      team.rotation.srMode = true;
-    } else {
-      team.rotation.srMode = false;
-      autoSelectServer();
-    }
+    team.rotation.liberoAutoOnRotate = !!ucLiberoAuto.checked;
     saveState();
-    renderRotationStrip();
-    if (rotationBackdrop && rotationBackdrop.style.display !== 'none') renderRotationWheel();
   });
   if (rotationClose) rotationClose.addEventListener('click', closeRotation);
   if (rotationDone) rotationDone.addEventListener('click', closeRotation);
@@ -3371,6 +4481,24 @@ document.addEventListener('DOMContentLoaded', function(){
         e.preventDefault();
         e.stopPropagation();
         resetSetBaseDraft();
+        return;
+      }
+      if (btn.id === 'setBaseLoadPreset'){
+        e.preventDefault();
+        e.stopPropagation();
+        loadSelectedSetBasePreset();
+        return;
+      }
+      if (btn.id === 'setBaseSavePreset'){
+        e.preventDefault();
+        e.stopPropagation();
+        saveCurrentSetBaseAsPreset();
+        return;
+      }
+      if (btn.id === 'setBaseCopyPrevSet'){
+        e.preventDefault();
+        e.stopPropagation();
+        copyPreviousSetIntoSetBase();
         return;
       }
       if (btn.id === 'rotationReset'){
@@ -3778,11 +4906,45 @@ document.addEventListener('DOMContentLoaded', function(){
   // Undo
   var _undoBusy = false;
 
+  function historyEntryMatchesView(entry){
+    if (!entry) return false;
+    var curMatch = getMatchKey();
+    var curSet = setSelect.value || '1';
+    return entry.match === curMatch && String(entry.set) === String(curSet);
+  }
+
+  function peekUndoPrimaryEntry(team){
+    if (!team || !team.history || !team.history.length) return null;
+    var idx = team.history.length - 1;
+    while (idx >= 0 && team.history[idx].auto) idx--;
+    return idx >= 0 ? team.history[idx] : null;
+  }
+
+  function canUndoCurrentContext(team){
+    return historyEntryMatchesView(peekUndoPrimaryEntry(team));
+  }
+
+  function restoreScoreForUndoEntry(entry){
+    if (!entry || !entry.scoreBefore) return false;
+    var sk = scoreKeyFromHistoryEntry(entry);
+    if (!sk) return false;
+    if (!scoreStore[sk]) scoreStore[sk] = { our: 0, opp: 0 };
+    scoreStore[sk].our = entry.scoreBefore.our;
+    scoreStore[sk].opp = entry.scoreBefore.opp;
+    return true;
+  }
+
   function undoLast(){
-    if (_undoBusy) return; // prevent double-press
+    if (_undoBusy) return;
 
     var team = activeTeam();
     if (!team || !team.history || !team.history.length) return;
+
+    var primary = peekUndoPrimaryEntry(team);
+    if (!primary || !historyEntryMatchesView(primary)){
+      alert('Nothing to undo for this day, match, and set. Undo only reverses the last stat recorded in the current view.');
+      return;
+    }
 
     // Visual + audio + haptic feedback
     var undoBtns = [byId('undoBtn'), byId('mobileUndoBtn')].filter(Boolean);
@@ -3828,11 +4990,9 @@ document.addEventListener('DOMContentLoaded', function(){
       counters[action] = Math.max(0, nz(counters[action],0) - 1);
 
     // Restore score and rotation from snapshot if available, otherwise fall back
-    if (last.scoreBefore){
-      var sc = currentScore();
-      sc.our = last.scoreBefore.our;
-      sc.opp = last.scoreBefore.opp;
+    if (restoreScoreForUndoEntry(last)){
       saveScore();
+      renderScore();
     } else {
       var undoWasWin2  = (action === 'kill' || action === 'ace');
       var undoWasLose2 = (action === 'serveOut' || action === 'swingOut' || action === 'passShank' ||
@@ -3843,6 +5003,7 @@ document.addEventListener('DOMContentLoaded', function(){
     }
     if (last.rotationBefore){
       team.rotation = last.rotationBefore;
+      ensureRotation(team);
     } else {
       ensureRotation(team);
       var undoWasWin3  = (action === 'kill' || action === 'ace');
@@ -3894,11 +5055,11 @@ document.addEventListener('DOMContentLoaded', function(){
   function closeEditModal(){ hideModal(editBackdrop); }
 
   var COUNTER_LABELS = {
-    serve1:'Serve 1', serve2:'Serve 2', serve3:'Serve 3', ace:'ACE', serveOut:'Serve OUT',
+    serve1:'Serve 1', serve2:'Serve 2', serve3:'Serve 3', ace:'ACE', serveOut:'ERR',
     passToTarget:'Pass 3', passNearTarget:'Pass 2', passAwayTarget:'Pass 1', passShank:'Pass 0',
-    swing:'Swing', swingOut:'Swing Out', kill:'Kill',
+    swing:'Swing', swingOut:'ERR', kill:'Kill',
     errHitting:'Hit Error', errServing:'Srv Error', errPassing:'Pass Error',
-    errNet:'In Net', errTwoHand:'Two Hand', errRotation:'Out of Rotation'
+    errNet:'In Net', errTwoHand:'BHE', errRotation:'Out of Rotation'
   };
 
   function buildEditGrid(){
@@ -4103,8 +5264,156 @@ document.addEventListener('DOMContentLoaded', function(){
     window.open('report.html', '_blank');
   }
   window._vsOpenReport = openReport;
+  var reportBtn = byId('reportBtn');
+  if (reportBtn) reportBtn.addEventListener('click', openReport);
+
+  // ── Swap sets (fix mis-assigned set data without deleting) ─────────────────
+  var swapSetsBackdrop = byId('swapSetsBackdrop');
+  var swapSetA = byId('swapSetA');
+  var swapSetB = byId('swapSetB');
+  var swapSetsPreview = byId('swapSetsPreview');
+  var swapSetsMatch = byId('swapSetsMatch');
+
+  function updateSwapSetsPreview(){
+    if (!swapSetsPreview || !swapSetA || !swapSetB) return;
+    var team = activeTeam();
+    if (!team){ swapSetsPreview.textContent = ''; return; }
+    var day = daySelect ? daySelect.value : 'Day 1';
+    var match = matchSelect ? matchSelect.value : 'Match 1';
+    var matchKey = day + ' - ' + match;
+    var setA = swapSetA.value || '1';
+    var setB = swapSetB.value || '2';
+    var data = team.data[matchKey] || {};
+    var scA = scoreStore[scoreKeyFor(day, match, setA)] || {our:0, opp:0};
+    var scB = scoreStore[scoreKeyFor(day, match, setB)] || {our:0, opp:0};
+    var eventsA = countSetStatEvents(data[setA]);
+    var eventsB = countSetStatEvents(data[setB]);
+    swapSetsPreview.innerHTML =
+      '<strong>Before swap</strong><br>' +
+      'Set ' + setA + ': score ' + (scA.our||0) + '-' + (scA.opp||0) + ', ' + eventsA + ' stat events<br>' +
+      'Set ' + setB + ': score ' + (scB.our||0) + '-' + (scB.opp||0) + ', ' + eventsB + ' stat events';
+  }
+
+  function openSwapSetsModal(){
+    var team = activeTeam();
+    if (!team){ alert('Select a team first.'); return; }
+    var day = daySelect ? daySelect.value : 'Day 1';
+    var match = matchSelect ? matchSelect.value : 'Match 1';
+    if (swapSetsMatch) swapSetsMatch.textContent = day + ' · ' + match;
+    if (swapSetA) swapSetA.value = '3';
+    if (swapSetB) swapSetB.value = '1';
+    updateSwapSetsPreview();
+    if (swapSetsBackdrop) showModal(swapSetsBackdrop);
+  }
+
+  function closeSwapSetsModal(){
+    if (swapSetsBackdrop) hideModal(swapSetsBackdrop);
+  }
+
+  async function confirmSwapSets(){
+    var team = activeTeam();
+    if (!team) return;
+    var day = daySelect ? daySelect.value : 'Day 1';
+    var match = matchSelect ? matchSelect.value : 'Match 1';
+    var setA = swapSetA ? swapSetA.value : '1';
+    var setB = swapSetB ? swapSetB.value : '2';
+    if (setA === setB){ alert('Pick two different sets.'); return; }
+    var vsConfirm = window.vsConfirm || function(){ return Promise.resolve(true); };
+    var ok = await vsConfirm('Swap Set ' + setA + ' ↔ Set ' + setB + ' for ' + day + ' · ' + match + '?<br><br>Stats and scores will be exchanged. Nothing is deleted.');
+    if (!ok) return;
+    var result = swapMatchSets(team, day, match, setA, setB);
+    if (!result.ok){ alert(result.error || 'Could not swap sets.'); return; }
+    saveState();
+    closeSwapSetsModal();
+    renderTable();
+    renderScore();
+    syncExportNameDefault();
+    alert('Swapped Set ' + setA + ' and Set ' + setB + ' for ' + match + '.');
+  }
+
+  window._vsOpenSwapSets = openSwapSetsModal;
+  window._vsGetMatchKey = getMatchKey;
+
+  if (swapSetA) swapSetA.addEventListener('change', updateSwapSetsPreview);
+  if (swapSetB) swapSetB.addEventListener('change', updateSwapSetsPreview);
+  if (byId('swapSetsBtn')) byId('swapSetsBtn').addEventListener('click', openSwapSetsModal);
+  if (byId('swapSetsClose')) byId('swapSetsClose').addEventListener('click', closeSwapSetsModal);
+  if (byId('swapSetsCancel')) byId('swapSetsCancel').addEventListener('click', closeSwapSetsModal);
+  if (byId('swapSetsOk')) byId('swapSetsOk').addEventListener('click', confirmSwapSets);
+  if (swapSetsBackdrop) swapSetsBackdrop.addEventListener('click', function(e){ if (e.target === swapSetsBackdrop) closeSwapSetsModal(); });
+
+  var liberoChips = byId('liberoChips');
+  void liberoChips;
 
   // ── Save & Advance to next set / match ────────────────────────────────────
+  function openNextSetLineupPrompt(nextSetNum, nextMatchName, defaultRot, team, matchKey){
+    return new Promise(function(resolve){
+      var bd = byId('nextSetBackdrop');
+      var body = byId('nextSetBody');
+      var rotSel = byId('nextSetStartRot');
+      var presetSel = byId('nextSetPresetSelect');
+      var presetField = byId('nextSetPresetField');
+      var copyPrevBtn = byId('nextSetCopyPrev');
+      var pendingBase = null;
+      if (!bd || !rotSel){ resolve({ startRot: defaultRot || 1 }); return; }
+      if (body){
+        body.textContent = 'Starting ' + nextMatchName + ' · Set ' + nextSetNum
+          + '. Choose a preset, copy the previous set, or pick a starting rotation.';
+      }
+      rotSel.value = String(defaultRot || 1);
+      syncLineupPresetSelect(presetSel, team);
+      if (presetField) presetField.style.display = (team && team.lineupPresets && team.lineupPresets.length) ? '' : 'none';
+      if (presetSel) presetSel.value = '';
+
+      var prevPlan = (team && matchKey) ? getPreviousSetLineup(team, matchKey, nextSetNum) : null;
+      if (copyPrevBtn){
+        copyPrevBtn.style.display = (prevPlan && prevPlan.base) ? '' : 'none';
+        copyPrevBtn.onclick = function(){
+          if (!prevPlan || !prevPlan.base) return;
+          pendingBase = JSON.parse(JSON.stringify(prevPlan.base));
+          rotSel.value = String((prevPlan.startOffset || 0) + 1);
+          if (presetSel) presetSel.value = '';
+        };
+      }
+      if (presetSel){
+        presetSel.onchange = function(){
+          var preset = getLineupPreset(team, presetSel.value);
+          if (!preset) return;
+          pendingBase = JSON.parse(JSON.stringify(preset.base));
+          rotSel.value = String((preset.startOffset || 0) + 1);
+        };
+      }
+
+      function cleanup(){
+        bd.classList.add('hidden');
+        bd.style.display = 'none';
+        if (presetSel) presetSel.onchange = null;
+        if (copyPrevBtn) copyPrevBtn.onclick = null;
+      }
+      function onOk(){
+        var preset = presetSel && presetSel.value ? getLineupPreset(team, presetSel.value) : null;
+        var base = pendingBase || (preset ? JSON.parse(JSON.stringify(preset.base)) : null);
+        cleanup();
+        resolve({
+          startRot: parseInt(rotSel.value, 10) || 1,
+          base: base
+        });
+      }
+      function onCancel(){
+        cleanup();
+        resolve(null);
+      }
+      var okBtn = byId('nextSetOk');
+      var cancelBtn = byId('nextSetCancel');
+      var closeBtn = byId('nextSetClose');
+      if (okBtn) okBtn.onclick = onOk;
+      if (cancelBtn) cancelBtn.onclick = onCancel;
+      if (closeBtn) closeBtn.onclick = onCancel;
+      bd.classList.remove('hidden');
+      bd.style.display = 'flex';
+    });
+  }
+
   window._vsNextSet = async function(){
     var vsConfirm = window.vsConfirm || function(){ return Promise.resolve(true); };
     var team = activeTeam();
@@ -4114,9 +5423,8 @@ document.addEventListener('DOMContentLoaded', function(){
     var curMatch = matchSelect ? matchSelect.value : 'Match 1';
     var score    = currentScore();
     var our = score.our || 0, opp = score.opp || 0;
-
-    var isTiebreak = (curSet === 3);
-    var winScore   = isTiebreak ? 15 : 25;
+    var tournament = getTournament();
+    var winScore   = getSetWinScore(curSet, tournament);
     var ourWon  = our >= winScore && (our - opp) >= 2;
     var oppWon  = opp >= winScore && (opp - our) >= 2;
 
@@ -4136,25 +5444,20 @@ document.addEventListener('DOMContentLoaded', function(){
       window._firebaseArchive(state, archLabel).catch(function(e){ console.warn('[VolleyStat] Archive failed:', e.message); });
     }
 
-    // Count sets won in this match
-    var matchSetsOur = 0, matchSetsOpp = 0;
+    // Count sets won in this match (win by 2 at set target score)
     var curDay = daySelect ? daySelect.value : 'Day 1';
-    for (var s = 1; s <= curSet; s++){
-      var sw2 = (s === 3) ? 15 : 25;
-      var sc2;
-      if (s === curSet){
-        sc2 = score;
-      } else {
-        var sk2 = curDay + ' - ' + curMatch + ' - ' + s;
-        sc2 = scoreStore[sk2] || {our:0, opp:0};
-      }
-      if ((sc2.our||0) >= sw2 && ((sc2.our||0)-(sc2.opp||0)) >= 2) matchSetsOur++;
-      else if ((sc2.opp||0) >= sw2 && ((sc2.opp||0)-(sc2.our||0)) >= 2) matchSetsOpp++;
-    }
+    var matchKey = curDay + ' - ' + curMatch;
+    var setsToWin = setsToWinMatch(tournament.format);
+    var maxSets = maxSetsInMatch(tournament.format);
+    var scoreRef = Object.assign({}, scoreStore, { _current: score });
+    var won = countMatchSetsWon(curDay, curMatch, curSet, tournament, scoreRef);
+    var matchSetsOur = won.our;
+    var matchSetsOpp = won.opp;
 
     var nextSet   = curSet + 1;
     var nextMatch = curMatch;
-    var matchOver = (matchSetsOur >= 2 || matchSetsOpp >= 2 || nextSet > 3);
+    var matchClinched = (matchSetsOur >= setsToWin || matchSetsOpp >= setsToWin);
+    var matchOver = matchClinched || nextSet > maxSets;
 
     if (matchOver){
       var matches = team.matches || DEFAULT_MATCHES;
@@ -4162,17 +5465,35 @@ document.addEventListener('DOMContentLoaded', function(){
       if (matchIdx >= 0 && matchIdx < matches.length - 1){
         nextMatch = matches[matchIdx + 1];
         nextSet = 1;
-        var mWinner = matchSetsOur >= 2 ? 'WE WIN' : 'OPPONENT WINS';
-        if (!await vsConfirm(mWinner + ' the match!<br><br>Advancing to ' + nextMatch + '.')) return;
+        var mWinner = matchSetsOur >= setsToWin ? 'WE WIN' : 'OPPONENT WINS';
+        var clinchNote = matchClinched
+          ? (' Match finalized' + (curSet === 3 && tournament.format === 'bestOf3' ? ' (deciding set)' : '') + '.')
+          : '';
+        if (!await vsConfirm(mWinner + ' the match' + clinchNote + '<br><br>Advancing to ' + nextMatch + ' · Set 1.')) return;
       } else {
         await vsConfirm('All matches complete for this day.');
         return;
       }
     }
 
-    // Reset rotation for new set — restore locked base lineup
-    ensureRotation(team);
-    restoreRotationOneBase(team);
+    var nextMatchKey = curDay + ' - ' + nextMatch;
+    var nextLineup = getSetLineup(team, nextMatchKey, nextSet);
+    if (!nextLineup){
+      var defaultRot = (nextMatch !== curMatch)
+        ? 1
+        : ((team.rotation.offset || 0) + 1);
+      var picked = await openNextSetLineupPrompt(nextSet, nextMatch, defaultRot, team, nextMatchKey);
+      if (!picked) return;
+      var baseForPlan = picked.base
+        ? JSON.parse(JSON.stringify(picked.base))
+        : (team.savedBase
+          ? JSON.parse(JSON.stringify(team.savedBase))
+          : JSON.parse(JSON.stringify(team.rotation.base)));
+      saveSetLineup(team, nextMatchKey, nextSet, baseForPlan, picked.startRot);
+    }
+
+    applySetStart(team, nextMatchKey, nextSet);
+    applyLiberoForCurrentMatch(team);
 
     // Advance selectors
     if (matchSelect && nextMatch !== curMatch){
@@ -4234,6 +5555,7 @@ document.addEventListener('DOMContentLoaded', function(){
     team.rotation.hasBall = true;
     team.rotation.liberoActive = false;
     team.rotation.liberoSlot = null;
+    team.rotation.liberoCourtPos = null;
     team.rotation.srMode = false;
     team.rotation.subCount = 0;
     team.rotation.autoSubOriginals = {};
@@ -4263,9 +5585,20 @@ document.addEventListener('DOMContentLoaded', function(){
   if (daySelect) daySelect.addEventListener('change', function(){
     var mobileDayEl = byId('mobileDaySelect');
     if (mobileDayEl) mobileDayEl.value = daySelect.value;
+    var team = activeTeam();
+    if (team && team.matches && team.matches.length){
+      matchSelect.value = team.matches[0];
+      var mms = byId('mobileMatchSelect');
+      if (mms) mms.value = team.matches[0];
+    }
+    setSelect.value = '1';
+    var mss = byId('mobileSetSelect');
+    if (mss) mss.value = '1';
     renderTable();
     syncExportNameDefault();
-    renderScore(); // load score for this day
+    renderScore();
+    renderRotationStrip();
+    syncActivePlayerToPossession();
   });
 
   // Add Day button — appends a new day option to both day selects
@@ -4328,7 +5661,14 @@ document.addEventListener('DOMContentLoaded', function(){
   if (mobileAddMatchBtn) mobileAddMatchBtn.addEventListener('click', addMatch);
   matchSelect.addEventListener('change', function(){
     var team = activeTeam();
-    if (team){ ensureRotation(team); team.rotation.subCount = 0; team.rotation.autoSubOriginals = {}; saveState(); }
+    if (team){
+      ensureRotation(team);
+      team.rotation.subCount = 0;
+      team.rotation.autoSubOriginals = {};
+      applySetStart(team, getMatchKey(), setSelect ? setSelect.value : '1');
+      applyLiberoForCurrentMatch(team);
+      saveState();
+    }
     renderTable();
     syncExportNameDefault();
     renderScore();
@@ -4336,7 +5676,14 @@ document.addEventListener('DOMContentLoaded', function(){
   });
   setSelect.addEventListener('change', function(){
     var team = activeTeam();
-    if (team){ ensureRotation(team); team.rotation.subCount = 0; team.rotation.autoSubOriginals = {}; saveState(); }
+    if (team){
+      ensureRotation(team);
+      team.rotation.subCount = 0;
+      team.rotation.autoSubOriginals = {};
+      applySetStart(team, getMatchKey(), setSelect.value);
+      applyLiberoForCurrentMatch(team);
+      saveState();
+    }
     renderTable();
     syncExportNameDefault();
     renderScore();
@@ -4347,6 +5694,7 @@ document.addEventListener('DOMContentLoaded', function(){
     state.activeTeamId = teamSelect.value;
     saveState();
     initMatchSelect();
+    applyLiberoForCurrentMatch(activeTeam());
     renderTable();
     if (exportName) exportName.dataset.userEdited = '';
     updateOnboardingAndControls();
@@ -4364,6 +5712,15 @@ document.addEventListener('DOMContentLoaded', function(){
   // Initial paint
   initTeamSelect();
   initMatchSelect();
+  syncSetSelectOptions();
+  syncTournamentUI();
+  var tournamentFormatEl = byId('tournamentFormat');
+  var tournamentSet3El = byId('tournamentSet3Win');
+  var tournamentSet5El = byId('tournamentSet5Win');
+  if (tournamentFormatEl) tournamentFormatEl.addEventListener('change', onTournamentChange);
+  if (tournamentSet3El) tournamentSet3El.addEventListener('change', onTournamentChange);
+  if (tournamentSet5El) tournamentSet5El.addEventListener('change', onTournamentChange);
+  applyLiberoForCurrentMatch(activeTeam());
   applyModeToUI();
   syncExportNameDefault();
   renderTable();
@@ -4423,6 +5780,7 @@ document.addEventListener('DOMContentLoaded', function(){
       var appWrap = document.querySelector('.page-wrap');
       var loginOverlay = byId('loginOverlay');
       var playerStripEl = byId('playerStrip');
+      var unifiedPanel = byId('unifiedCourtPanel');
       var scorebar = document.querySelector('.score-bar');
       var syncbar = byId('syncBar');
 
@@ -4430,6 +5788,7 @@ document.addEventListener('DOMContentLoaded', function(){
         // Show login overlay, hide app content
         if (appWrap) appWrap.style.display = 'none';
         if (playerStripEl) playerStripEl.style.display = 'none';
+        if (unifiedPanel) unifiedPanel.style.display = 'none';
         if (scorebar) scorebar.style.display = 'none';
         if (loginOverlay) loginOverlay.style.display = 'flex';
         return;
@@ -4438,8 +5797,12 @@ document.addEventListener('DOMContentLoaded', function(){
       // Signed in — hide overlay, show app
       if (loginOverlay) loginOverlay.style.display = 'none';
       if (appWrap) appWrap.style.display = '';
-      if (playerStripEl) playerStripEl.style.display = '';
+      if (playerStripEl) playerStripEl.style.display = 'none';
+      if (unifiedPanel && activeTeam() && activeTeam().players && activeTeam().players.length){
+        unifiedPanel.style.display = '';
+      }
       if (scorebar) scorebar.style.display = '';
+      renderUnifiedCourt();
 
       // Register session immediately on login with current team name
       var currentTeam = activeTeam();
@@ -4493,7 +5856,7 @@ document.addEventListener('DOMContentLoaded', function(){
         var day   = daySelect ? daySelect.value : 'Day 1';
         var match = matchSelect ? matchSelect.value : 'Match 1';
         var set   = setSelect ? setSelect.value : '1';
-        var view  = viewSelect ? viewSelect.value : 'tournament';
+        var view  = viewSelect ? viewSelect.value : 'set';
         return { day, match, set, scope: view === 'tournament' ? 'all' : view === 'match' ? 'match' : 'set' };
       }
 
@@ -4965,6 +6328,53 @@ document.addEventListener('DOMContentLoaded', function(){
     saveState();
   }
 
+  function syncSrvRecPanel(team){
+    var recv = byId('srvRecReceivePanel');
+    var serve = byId('srvRecServingPanel');
+    var statPoss = byId('statPossessionBtn');
+    var pill = byId('scorePossessionPill');
+    if (!team){
+      if (recv) recv.style.display = '';
+      if (serve) serve.style.display = 'none';
+      return;
+    }
+    ensureRotation(team);
+    enforceServingReceiveMode(team);
+    var hasBall = team.rotation.hasBall !== false;
+    if (recv) recv.style.display = hasBall ? 'none' : '';
+    if (serve) serve.style.display = hasBall ? '' : 'none';
+    var label = hasBall ? '🟢 Serving' : '🔴 Receiving';
+    var bg = hasBall ? 'rgba(22,163,74,.85)' : 'rgba(220,38,38,.85)';
+    var border = hasBall ? '#15803d' : '#b91c1c';
+    if (statPoss){
+      statPoss.textContent = label + ' — tap to switch';
+      statPoss.style.background = bg;
+      statPoss.style.color = '#fff';
+      statPoss.style.borderColor = border;
+    }
+    if (pill){
+      pill.textContent = label;
+      pill.style.background = hasBall ? 'rgba(22,163,74,.6)' : 'rgba(220,38,38,.6)';
+    }
+  }
+
+  function togglePossession(){
+    var team = activeTeam();
+    if (!team) return;
+    ensureRotation(team);
+    team.rotation.hasBall = !team.rotation.hasBall;
+    if (!team.rotation.hasBall){
+      team.rotation.srMode = true;
+    } else {
+      team.rotation.srMode = false;
+      autoSelectServer();
+    }
+    enforceServingReceiveMode(team);
+    saveState();
+    renderRotationStrip();
+    if (rotationBackdrop && rotationBackdrop.style.display !== 'none') renderRotationWheel();
+  }
+
   // ── Rotation status strip ─────────────────────────────────────────────────
   function renderRotationStrip(){
     var strip      = byId('rotationStatusStrip');
@@ -4975,6 +6385,8 @@ document.addEventListener('DOMContentLoaded', function(){
     var scoreRotBtn    = byId('scoreRotationBtn');
 
     var team = activeTeam();
+
+    syncSrvRecPanel(team);
 
     // Score bar possession pill — always update when visible
     if (possessionPill && team){
@@ -5017,6 +6429,7 @@ document.addEventListener('DOMContentLoaded', function(){
       oppScBtn.disabled = false;
       oppScBtn.style.background = '#dc2626';
     }
+    renderUnifiedCourt();
   }
 
   function renderScore(){
@@ -5033,19 +6446,22 @@ document.addEventListener('DOMContentLoaded', function(){
       var day = (daySelect && daySelect.value) ? daySelect.value : 'Day 1';
       var matchName = matchSelect ? (matchSelect.value || 'Match 1') : 'Match 1';
       var setNum = setSelect ? (setSelect.value || '1') : '1';
-      setLabelEl.textContent = day + ' · ' + matchName + ' · Set ' + setNum;
+      var winTo = getSetWinScore(setNum);
+      setLabelEl.textContent = day + ' · ' + matchName + ' · Set ' + setNum + ' (to ' + winTo + ')';
     }
   }
 
   function refreshAllUI(){
     initTeamSelect();
     initMatchSelect();
+    syncSetSelectOptions();
+    syncTournamentUI();
     applyModeToUI();
     syncExportNameDefault();
     renderTable();
     updateOnboardingAndControls();
     populateMobilePlayerSelect();
-    autoSelectServer();
+    syncActivePlayerToPossession();
     renderScore();
     renderRotationStrip();
   }
@@ -5099,6 +6515,7 @@ document.addEventListener('DOMContentLoaded', function(){
       ensureRotation(team);
       team.rotation.hasBall = false;
       team.rotation.srMode  = true;
+      clearPlayerSelectionForReceive();
       saveState();
       renderRotationStrip();
       if (rotationBackdrop && rotationBackdrop.style.display !== 'none') renderRotationWheel();
@@ -5118,13 +6535,13 @@ document.addEventListener('DOMContentLoaded', function(){
   // also match new class name
   if (!playerStripBtns) playerStripBtns = document.querySelector('.ps-btns');
   var selectedPlayerBar = byId('selectedPlayerBar');
-  var LAST_PLAYER_KEY = 'volleystat_last_player';
 
-  // Last-used player memory
-  function getLastPlayer(){ return localStorage.getItem(LAST_PLAYER_KEY) || ''; }
-  function setLastPlayer(id){ localStorage.setItem(LAST_PLAYER_KEY, id); }
-
-  var activePlayerId = getLastPlayer();
+  function syncActivePlayerToPossession(){
+    var team = activeTeam();
+    if (!team) return;
+    ensureRotation(team);
+    if (team.rotation.hasBall !== false) autoSelectServer();
+  }
 
   // Auto-select the current server as the active player when we have the ball
   function autoSelectServer(){
@@ -5134,50 +6551,23 @@ document.addEventListener('DOMContentLoaded', function(){
     if (!team.rotation.hasBall) return;
     var serverId = getServerPlayerId(team);
     if (!serverId) return;
-    if (activePlayerId === serverId) { updateSelectedBar(); return; }
+    if (activePlayerId === serverId) { renderUnifiedCourt(); return; }
     activePlayerId = serverId;
-    setLastPlayer(serverId);
-    // Update active highlight on existing strip buttons without rebuilding
     if (playerStripBtns){
       playerStripBtns.querySelectorAll('button').forEach(function(b){
         b.classList.toggle('active', b.dataset.pid === serverId);
       });
     }
-    updateSelectedBar();
+    renderUnifiedCourt();
   }
 
   function clearSelectedPlayer(){
-    activePlayerId = '';
-    localStorage.removeItem(LAST_PLAYER_KEY);
+    clearPlayerSelectionForReceive();
     buildPlayerStrip();
     buildDesktopStrip();
   }
 
-  function updateSelectedBar(){
-    if (!selectedPlayerBar) return;
-    var team = activeTeam();
-    if (!team || !activePlayerId){
-      selectedPlayerBar.textContent = 'Tap a player name above to select';
-      selectedPlayerBar.style.background = '#64748b';
-      selectedPlayerBar.style.display = 'block';
-      return;
-    }
-    var player = null;
-    for (var i=0;i<team.players.length;i++) if(team.players[i].id===activePlayerId) player=team.players[i];
-    if (!player){
-      activePlayerId = '';
-      selectedPlayerBar.textContent = 'Tap a player name above to select';
-      selectedPlayerBar.style.background = '#64748b';
-      selectedPlayerBar.style.display = 'block';
-      return;
-    }
-    var isServer = false;
-    ensureRotation(team);
-    if (team.rotation.hasBall) isServer = (getServerPlayerId(team) === activePlayerId);
-    selectedPlayerBar.textContent = 'Recording for: ' + (player.number?'#'+player.number+' ':'') + player.name + (isServer ? ' 🏐 Serving' : '');
-    selectedPlayerBar.style.background = isServer ? '#16a34a' : '#1e3a8a';
-    selectedPlayerBar.style.display = 'block';
-  }
+  function updateSelectedBar(){ /* recording-for bar removed */ }
 
   // Desktop strip now unified — references point to universal strip
   var desktopPlayerStrip = null;  // removed
@@ -5206,20 +6596,18 @@ document.addEventListener('DOMContentLoaded', function(){
       btn.textContent = label;
       btn.className = 'player-pill';
       if (p.id === activePlayerId){ btn.classList.add('active'); }
+      var onCourt = getOnCourtPlayerIdSet(team);
+      var isOnCourt = !!onCourt[playerIdKey(p.id)];
+      applyPlayerPillStyle(btn, p, {
+        bench: !isOnCourt,
+        active: p.id === activePlayerId,
+        libero: isLiberoPlayer(team, p.id)
+      });
       btn.addEventListener('click', function(){
-        activePlayerId = p.id;
-        setLastPlayer(p.id);
-        // Update all strip buttons
-        playerStripBtns.querySelectorAll('button').forEach(function(b){
-          b.classList.toggle('active', b.dataset.pid === p.id);
-        });
-        updateSelectedBar();
-        // Vibrate for feedback
-        if (navigator.vibrate) navigator.vibrate(20);
+        selectUnifiedPlayer(p.id);
       });
       playerStripBtns.appendChild(btn);
     });
-    updateSelectedBar();
   }
 
   function populateMobilePlayerSelect(){
@@ -5227,15 +6615,10 @@ document.addEventListener('DOMContentLoaded', function(){
     buildDesktopStrip();
   }
   populateMobilePlayerSelect();
-  // Auto-select server on load if we have the ball and rotation is set up
-  // Must run after populateMobilePlayerSelect so activePlayerId and strip are ready
-  autoSelectServer();
+  syncActivePlayerToPossession();
+  renderUnifiedCourt();
 
-  // Wire clear buttons
-  var clearPlayerBtn = byId('clearPlayerBtn');
-  if (clearPlayerBtn) clearPlayerBtn.addEventListener('click', clearSelectedPlayer);
-
-  // Click blank space in strip areas to clear selection
+  // Wire clear buttons — strip blank-space tap still clears selection
   var playerStripEl = byId('playerStrip');
   if (playerStripEl) playerStripEl.addEventListener('click', function(e){
     // Only clear if click landed directly on the strip container, not a button

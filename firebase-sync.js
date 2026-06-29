@@ -167,8 +167,14 @@ let pendingState = null;
 const SAVE_DEBOUNCE_MS = 800;
 
 async function writeState(stateObj) {
+  var json = JSON.stringify(stateObj);
+  if (json.length > 1000000) {
+    console.warn('[VolleyStat] State is', Math.round(json.length / 1024), 'KB — trimming before cloud save');
+    setSyncStatus('error');
+    throw new Error('Session data is too large to sync (' + Math.round(json.length / 1024) + ' KB). Export CSV and Reset, or archive and start fresh.');
+  }
   await setDoc(userDataRef(), {
-    data: JSON.stringify(stateObj),
+    data: json,
     updatedAt: Date.now()
   }, { merge: true });
   lastSaved = Date.now();
@@ -188,7 +194,9 @@ export async function flushFirebaseSave() {
     pendingState = null;
   } catch(e) {
     console.error('[VolleyStat] Flush save error:', e);
-    if (!navigator.onLine) setSyncStatus('local');
+    if (e.message && e.message.indexOf('too large') >= 0) {
+      setSyncStatus('error');
+    } else if (!navigator.onLine) setSyncStatus('local');
     else setSyncStatus('error');
   }
 }
@@ -205,7 +213,9 @@ export function firebaseSave(stateObj) {
       pendingState = null;
     } catch(e) {
       console.error('[VolleyStat] Save error:', e);
-      if (!navigator.onLine) setSyncStatus('local');
+      if (e.message && e.message.indexOf('too large') >= 0) {
+        setSyncStatus('error');
+      } else if (!navigator.onLine) setSyncStatus('local');
       else setSyncStatus('error');
     }
   }, SAVE_DEBOUNCE_MS);

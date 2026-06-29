@@ -27,7 +27,7 @@
     #pickerBackdrop{z-index:1200}
 
     /* ── Rotation FAB (floating action button) ── */
-    #rotationFAB{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom,0px));right:18px;z-index:1050;background:#1e3a8a;color:#fff;border:none;border-radius:50px;padding:12px 18px;font-size:13px;font-weight:900;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.25);display:none;align-items:center;gap:7px;touch-action:manipulation;letter-spacing:.02em;transition:transform .1s;}
+    #rotationFAB{display:none !important;}
     #rotationFAB:active{transform:scale(.94);}
     #rotationFAB .fab-rot{font-size:15px;}
 
@@ -61,14 +61,14 @@
     .rot-player-name .rot-base-pos{color:#dc2626;font-weight:900;}
     .rot-circle-posnum{font-size:9px;font-weight:700;color:#9ca3af;text-align:center;}
     .rot-circle-wrap.is-server .rot-volleyball{border-color:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.25);}
-    .rot-circle-wrap.is-libero .rot-volleyball{border-color:#d97706;box-shadow:0 0 0 3px rgba(217,119,6,.2);}
+    .rot-circle-wrap.is-libero .rot-volleyball{border-color:#000;background:#fde047;box-shadow:0 0 0 3px rgba(0,0,0,.2);}
     .rot-circle-wrap.is-empty .rot-volleyball{border-style:dashed;border-color:#d1d5db;background-color:#f9fafb;opacity:.85;}
     .rot-circle-wrap.is-empty .rot-pos-label{color:#d1d5db;}
     .rot-circle-wrap.is-sub-in .rot-volleyball{box-shadow:0 0 0 2px rgba(13,148,136,.35);}
     .rot-circle-wrap.has-rules .rot-volleyball{box-shadow:0 0 0 2px rgba(30,58,138,.25);}
     /* Per-player rules popover */
     #rotationCourtWrap{position:relative;}
-    .rot-player-menu{position:absolute;z-index:20;display:none;min-width:200px;max-width:280px;max-height:70vh;overflow-y:auto;background:#fff;border:2px solid #1e3a8a;border-radius:12px;padding:10px 12px;box-shadow:0 8px 28px rgba(0,0,0,.18);}
+    .rot-player-menu{position:fixed;z-index:1400;display:none;min-width:200px;max-width:280px;max-height:70vh;overflow-y:auto;background:#fff;border:2px solid #1e3a8a;border-radius:12px;padding:10px 12px;box-shadow:0 8px 28px rgba(0,0,0,.18);}
     .rot-player-menu.open{display:block;}
     .rot-menu-title{font-size:12px;font-weight:900;color:#1e3a8a;margin-bottom:8px;line-height:1.3;}
     .rot-menu-section{margin-top:8px;padding-top:8px;border-top:1px solid #e5e7eb;}
@@ -84,6 +84,9 @@
     .rot-menu-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;}
     .rot-menu-chip{appearance:none;border:1px solid #e5e7eb;background:#f9fafb;color:#374151;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;}
     .rot-menu-chip.selected{background:#1e3a8a;color:#fff;border-color:#1e3a8a;}
+    .libero-chip{appearance:none;border:2px solid #000;background:#fde047;color:#422006;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:800;cursor:pointer;touch-action:manipulation;}
+    .libero-chip.empty{border-style:dashed;color:#854d0e;background:#fff;}
+    .libero-chip.on-court{background:#fde047;color:#422006;border-color:#000;}
     .rot-menu-actions{margin-top:8px;display:flex;gap:6px;}
     .rot-menu-actions button{flex:1;font-size:11px;font-weight:700;padding:6px 8px;border-radius:6px;border:1px solid #d1d5db;background:#f9fafb;cursor:pointer;}
     .rot-menu-actions button.primary{background:#1e3a8a;color:#fff;border-color:#1e3a8a;}
@@ -136,6 +139,8 @@
     .score-adj{display:flex;flex-direction:column;gap:3px;}
     .score-adj-btn{appearance:none;border:none;background:rgba(255,255,255,.2);color:#fff;width:30px;height:30px;border-radius:6px;font-size:17px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;touch-action:manipulation;}
     .score-adj-btn:active{background:rgba(255,255,255,.4)}
+    #ourScoreUp{background:#16a34a;width:32px;height:32px;box-shadow:0 2px 6px rgba(0,0,0,.25);}
+    #ourScoreUp:active{background:#15803d;box-shadow:0 1px 3px rgba(0,0,0,.2);}
     .score-num{font-size:32px;font-weight:900;color:#fff;line-height:1;min-width:36px;text-align:center;}
     .score-label{font-size:10px;font-weight:800;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.05em;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     .score-center{flex:1;text-align:center;font-size:10px;color:rgba(255,255,255,.4);letter-spacing:.03em;padding:0 4px;}
@@ -151,6 +156,48 @@
     .player-pill{appearance:none;border:2px solid #e5e7eb;background:#fff;color:#374151;padding:6px 10px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:all .1s;white-space:nowrap;}
     .player-pill.active{background:#1e3a8a;color:#fff;border-color:#1e3a8a;}
     .sel-bar{margin-top:6px;padding:5px 10px;background:#1e3a8a;border-radius:7px;color:#fff;font-size:12px;font-weight:700;text-align:center;display:none;}
+
+    /* ══ Unified court + bench (Phase 3) ══ */
+    .unified-court-panel{background:#fff;border-bottom:2px solid #e5e7eb;padding:8px 10px 10px;position:relative;}
+    .uc-header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
+    .uc-rot-label{font-size:12px;font-weight:900;color:#1e3a8a;letter-spacing:.02em;}
+    .uc-actions{display:flex;gap:5px;flex-wrap:wrap;}
+    .uc-btn{appearance:none;border:1px solid #e5e7eb;background:#f9fafb;color:#374151;padding:0 9px;height:30px;border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;touch-action:manipulation;white-space:nowrap;}
+    .uc-btn.primary{background:#1e3a8a;color:#fff;border-color:#1e3a8a;}
+    .unified-court-grid{background:#e8f5e9;border:2px solid #4caf50;border-radius:10px;overflow:hidden;user-select:none;touch-action:manipulation;}
+    .uc-net{background:#1e3a8a;color:rgba(255,255,255,.75);text-align:center;font-size:8px;font-weight:900;letter-spacing:.12em;padding:3px;}
+    .uc-row{display:flex;justify-content:space-around;align-items:stretch;padding:6px 4px;gap:4px;}
+    .uc-row.front{background:rgba(255,255,255,.45);}
+    .uc-row.back{background:rgba(255,255,255,.2);}
+    .uc-slot{flex:1;max-width:96px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:2px;border-radius:8px;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
+    .uc-slot.active-slot{background:rgba(30,58,138,.12);outline:2px solid #1e3a8a;outline-offset:1px;}
+    .uc-ball{width:54px;height:54px;border-radius:50%;border:3px solid #cbd5e1;background:#fffef5;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 1px 6px rgba(0,0,0,.1);}
+    .uc-ball.is-server{border-color:#16a34a;box-shadow:0 0 0 2px rgba(22,163,74,.3);}
+    .uc-ball.is-libero{border-color:#000;background:#fde047;box-shadow:0 0 0 2px rgba(0,0,0,.2);}
+    .uc-ball.is-empty{border-style:dashed;opacity:.7;}
+    .uc-pos{font-size:9px;font-weight:900;line-height:1;}
+    .uc-num{font-size:8px;font-weight:800;line-height:1;}
+    .uc-name{font-size:9px;font-weight:800;color:#374151;text-align:center;max-width:80px;line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .uc-bench-hint{font-size:10px;color:#9ca3af;font-weight:700;margin:8px 0 2px;line-height:1.3;}
+    .uc-bench-label{font-size:10px;font-weight:800;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;margin:8px 0 4px;}
+    .uc-bench-row{display:flex;align-items:stretch;gap:8px;}
+    .uc-bench-main{flex:1;min-width:0;}
+    .uc-rotation-rail{display:flex;flex-direction:column;gap:4px;flex-shrink:0;align-self:stretch;justify-content:flex-start;margin-left:auto;}
+    .uc-rot-arrows{display:flex;gap:4px;}
+    .uc-rotation-rail .uc-btn{min-width:44px;height:32px;padding:0 6px;}
+    .uc-rotation-rail .uc-rot-arrows .uc-btn{flex:1;min-width:32px;font-size:16px;line-height:1;}
+    .uc-rotation-rail .uc-btn.rotation-open{font-size:10px;letter-spacing:.02em;padding:0 4px;}
+    .unified-bench-rail{display:flex;flex-wrap:wrap;gap:5px;min-height:32px;align-content:flex-start;}
+    .uc-libero-row{display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap;}
+    .uc-libero-label{font-size:10px;font-weight:800;color:#6b7280;}
+    .uc-libero-auto{display:flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:#6b7280;margin-left:auto;white-space:nowrap;}
+    .uc-libero-auto input{width:14px;height:14px;margin:0;}
+    @media(min-width:650px){
+      .unified-court-panel{padding:10px 14px;}
+      .uc-ball{width:62px;height:62px;}
+      .uc-pos{font-size:10px;}
+      .uc-num{font-size:9px;}
+    }
 
     /* ══ SECTION 4: Stat buttons ══ */
     .stat-section{padding:10px 14px 0;}
@@ -494,7 +541,7 @@
       <h1>VolleyStat</h1>
       <div class="tagline">Live Courtside Analytics</div>
       <div class="title-bar-meta">
-        <span class="title-bar-badge">Alpha 0.1.143</span>
+        <span class="title-bar-badge">Alpha 0.1.159</span>
         <a href="quickstart.pdf" target="_blank">📄 Quick Start</a>
       </div>
     </div>
@@ -559,20 +606,52 @@
     <div id="serverConfirmBar" style="height:3px;background:rgba(255,255,255,.25);border-radius:2px;margin-top:10px;overflow:hidden;"><div id="serverConfirmBarFill" style="height:100%;background:#4ade80;width:100%;transition:width 2.5s linear;"></div></div>
   </div>
 
+  <!-- ══ UNIFIED COURT + BENCH (always visible when roster loaded) ══ -->
+  <div id="unifiedCourtPanel" class="unified-court-panel" style="display:none;">
+    <div class="uc-header">
+      <span id="ucRotLabel" class="uc-rot-label">Rot 1 · Serving</span>
+      <div class="uc-actions">
+        <button id="ucUndoBtn" type="button" class="uc-btn">Undo</button>
+        <button id="ucNextSetBtn" type="button" class="uc-btn primary">Next Set ▶</button>
+      </div>
+    </div>
+    <div id="unifiedCourtGrid" class="unified-court-grid" aria-label="Court lineup"></div>
+    <div class="uc-bench-row">
+      <div class="uc-bench-main">
+        <div class="uc-bench-hint">Select on-court player · tap bench or libero to sub in</div>
+        <div class="uc-bench-label">Bench</div>
+        <div id="unifiedBenchRail" class="unified-bench-rail" aria-label="Bench players"></div>
+      </div>
+      <div class="uc-rotation-rail" aria-label="Rotation controls">
+        <div class="uc-rot-arrows">
+          <button id="ucRotBack" type="button" class="uc-btn" title="Rotate back one position">&#8592;</button>
+          <button id="ucRotForward" type="button" class="uc-btn" title="Rotate forward one position">&#8594;</button>
+        </div>
+        <button id="ucRulesBtn" type="button" class="uc-btn rotation-open" title="Open rotation screen">Rotation</button>
+      </div>
+    </div>
+    <div class="uc-libero-row">
+      <span class="uc-libero-label">Libero</span>
+      <div id="unifiedLiberoChips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      <label class="uc-libero-auto" title="Automatically enter libero when a middle rotates to back row">
+        <input id="ucLiberoAutoToggle" type="checkbox" checked />
+        <span>Auto on rotate</span>
+      </label>
+    </div>
+  </div>
+
   <div class="player-strip" id="playerStrip" style="display:none;">
     <div class="ps-header">
       <span class="ps-title">Select Player</span>
       <div class="ps-actions">
-        <button id="clearPlayerBtn" class="ps-btn red">✕ Clear</button>
+        <button id="clearPlayerBtn" class="ps-btn red" title="Clear auto-record player selection" style="display:none" hidden>Clear auto-record</button>
         <button id="mobileUndoBtn" class="ps-btn">Undo Last</button>
         <button onclick="window._vsNextSet()" class="ps-btn" style="background:#1e3a8a;color:#fff;border-color:#1e3a8a;font-weight:900;">Next Set ▶</button>
         <button id="mobileEditBtn" class="ps-btn">Edit</button>
-        <button onclick="window._vsOpenReport()" class="ps-btn" style="background:#1e3a8a;color:#fff;border-color:#1e3a8a;">&#x1F4CA; Report</button>
-        <button onclick="window._vsReset()" class="ps-btn" style="color:#dc2626;border-color:rgba(220,38,38,.3);">Reset</button>
       </div>
     </div>
     <div class="ps-btns" id="playerStripBtns"></div>
-    <div class="sel-bar" id="selectedPlayerBar"></div>
+    <div class="sel-bar" id="selectedPlayerBar" style="display:none" hidden></div>
   </div>
 
   <!-- ══ 4. STAT BUTTONS ════════════════════════════════════════════════════ -->
@@ -585,17 +664,20 @@
         <button class="stat-btn" data-action="serve2">2</button>
         <button class="stat-btn" data-action="serve3">3</button>
         <button class="stat-btn" data-action="ace">ACE</button>
-        <button class="stat-btn danger span2" data-action="serveOut">OUT</button>
+        <button class="stat-btn danger span2" data-action="serveOut">ERR</button>
       </div>
     </div>
 
-    <div class="stat-group">
+    <div class="stat-group" id="srvRecGroup">
       <div class="stat-group-title">Srv / Rec</div>
-      <div class="stat-grid cols-2">
+      <div id="srvRecReceivePanel" class="stat-grid cols-2">
         <button class="stat-btn" data-action="passToTarget">3</button>
         <button class="stat-btn" data-action="passNearTarget">2</button>
         <button class="stat-btn" data-action="passAwayTarget">1</button>
         <button class="stat-btn danger" data-action="passShank">0</button>
+      </div>
+      <div id="srvRecServingPanel" class="stat-grid cols-2" style="display:none;">
+        <button id="statPossessionBtn" type="button" class="stat-btn span2" title="Tap to toggle serving / receiving" style="font-weight:900;min-height:42px;">🟢 Serving</button>
       </div>
     </div>
 
@@ -604,16 +686,16 @@
       <div class="stat-grid cols-2">
         <button class="stat-btn" data-action="kill">Kill</button>
         <button class="stat-btn" data-action="swing">Swing</button>
-        <button class="stat-btn danger span2" data-action="swingOut">Out</button>
+        <button class="stat-btn danger span2" data-action="swingOut">ERR</button>
       </div>
     </div>
 
     <div class="stat-group">
-      <div class="stat-group-title">Unforced Errors</div>
+      <div class="stat-group-title">Errors</div>
       <div class="stat-grid cols-2">
         <button class="stat-btn danger span2" data-action="errPassing">Passing</button>
         <button class="stat-btn danger" data-action="errNet">Net</button>
-        <button class="stat-btn danger" data-action="errTwoHand">2-Touch</button>
+        <button class="stat-btn danger" data-action="errTwoHand">BHE</button>
         <button class="stat-btn danger span2" data-action="errRotation">O.O.R.</button>
       </div>
     </div>
@@ -654,13 +736,13 @@
             <th style="background:#dbeafe;">Srv Err</th>
             <th style="background:#dbeafe;">Pass Err</th>
             <th style="background:#dbeafe;">Net</th>
-            <th style="background:#dbeafe;">2-Hand</th>
+            <th style="background:#dbeafe;">BHE</th>
             <th style="background:#dbeafe;">OOR</th>
           </tr>
         </thead>
         <tbody id="statsBody"></tbody>
       </table>
-      <div id="hintText" class="hint">Serve In % = (1 + 2 + 3 + ACE) ÷ Serve Attempts. OUT is a serve attempt but not &quot;in&quot;.</div>
+      <div id="hintText" class="hint">Serve In % = (1 + 2 + 3 + ACE) ÷ Serve Attempts. ERR is a serve attempt but not &quot;in&quot;.</div>
     </div>
   </div>
 
@@ -675,6 +757,7 @@
           <select id="teamSelect" class="bc-select"></select>
           <button id="teamsBtn" type="button" class="bc-btn">Teams</button>
           <button id="rosterBtn" type="button" class="bc-btn">Roster</button>
+          <button id="reportBtn" type="button" class="bc-btn">&#x1F4CA; Report</button>
         </div>
       </div>
 
@@ -708,11 +791,35 @@
       </div>
 
       <div class="bc-group">
+        <div class="bc-label">Format</div>
+        <select id="tournamentFormat" class="bc-select">
+          <option value="bestOf3">Best of 3</option>
+          <option value="bestOf5">Best of 5</option>
+        </select>
+      </div>
+
+      <div class="bc-group" id="tournamentSet3Group">
+        <div class="bc-label">Set 3 to</div>
+        <select id="tournamentSet3Win" class="bc-select">
+          <option value="15">15</option>
+          <option value="25">25</option>
+        </select>
+      </div>
+
+      <div class="bc-group" id="tournamentSet5Group" style="display:none;">
+        <div class="bc-label">Set 5 to</div>
+        <select id="tournamentSet5Win" class="bc-select">
+          <option value="15">15</option>
+          <option value="25">25</option>
+        </select>
+      </div>
+
+      <div class="bc-group">
         <div class="bc-label">View</div>
         <select id="viewSelect" class="bc-select">
-          <option value="set">Current Set</option>
+          <option value="set" selected>Current Set</option>
           <option value="match">Current Match</option>
-          <option value="tournament" selected>Tournament Total</option>
+          <option value="tournament">Tournament Total</option>
         </select>
       </div>
 
@@ -729,6 +836,7 @@
         <div class="bc-row">
           <input id="exportName" class="bc-input" placeholder="Save export as…" />
           <button id="exportBtn" type="button" class="bc-btn primary">Export CSV</button>
+          <button id="swapSetsBtn" type="button" class="bc-btn" title="Swap stats and scores between two sets">Swap Sets</button>
           <button id="rotationBtn" type="button" class="bc-btn" style="display:none">Rotation</button>
           <button id="resetBtn" type="button" class="bc-btn danger">Reset</button>
         </div>
@@ -751,9 +859,9 @@
         <option value="3">Set 3</option>
       </select>
       <select id="mobileViewSelect">
-        <option value="set">Current Set</option>
+        <option value="set" selected>Current Set</option>
         <option value="match">Current Match</option>
-        <option value="tournament" selected>Tournament Total</option>
+        <option value="tournament">Tournament Total</option>
       </select>
       <button id="mobileTeamsBtn"></button>
       <button id="mobileRosterBtn"></button>
@@ -810,8 +918,7 @@
                 <option value="RS">RS — Right Side</option>
                 <option value="MB1">MB1 — Middle Blocker 1</option>
                 <option value="MB2">MB2 — Middle Blocker 2</option>
-                <option value="LIB">LIB — Libero</option>
-                <option value="DS">DS — Defensive Specialist</option>
+                <option value="DS">DS — Defensive Specialist / Libero</option>
               </select>
             </div>
           </div>
@@ -855,6 +962,10 @@
       </div>
       <div class="modal-body" style="overflow-y:auto;flex:1;">
         <div id="rotationStatusBar" style="text-align:center;font-weight:900;font-size:15px;border-radius:10px;padding:7px 14px;margin-bottom:10px;transition:background .3s,color .3s;cursor:pointer;user-select:none;" title="Tap to toggle who is serving">🟢 Serving</div>
+        <div id="liberoSelectRow" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+          <span style="font-size:12px;font-weight:800;color:#374151;white-space:nowrap;">Libero:</span>
+          <div id="liberoChips" style="display:flex;gap:6px;flex-wrap:wrap;flex:1;"></div>
+        </div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
           <div id="rotationHint" style="font-size:12px;color:#6b7280;text-align:center;flex:1;">Double-tap a player for Sub · Auto-sub · Serving</div>
           <span id="subCountDisplay" style="font-size:11px;font-weight:900;color:#1e3a8a;background:#eff6ff;border-radius:6px;padding:2px 10px;white-space:nowrap;">Subs: 0/15 (excl. libero)</span>
@@ -862,10 +973,30 @@
         <div id="rotationCourtView">
           <div id="rotationCourtWrap">
             <div id="rotationWheel" class="rotation-wheel" aria-label="Rotation wheel"></div>
-            <div id="rotPlayerMenu" class="rot-player-menu" role="dialog" aria-label="Player rules"></div>
           </div>
           <div id="setBasePanel" aria-label="Set starting lineup">
             <div class="set-base-hint">Tap each position to assign your starting lineup (like the ref lineup card).</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+              <label style="font-size:11px;font-weight:800;color:#374151;">Start in rotation</label>
+              <select id="setBaseStartRot" style="border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;font-size:12px;font-weight:800;">
+                <option value="1">Rot 1</option>
+                <option value="2">Rot 2</option>
+                <option value="3">Rot 3</option>
+                <option value="4">Rot 4</option>
+                <option value="5">Rot 5</option>
+                <option value="6">Rot 6</option>
+              </select>
+              <span style="font-size:10px;color:#6b7280;">Saved per match + set (USAV lineup card)</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
+              <label style="font-size:11px;font-weight:800;color:#374151;white-space:nowrap;">Preset</label>
+              <select id="setBasePresetSelect" style="flex:1;min-width:120px;border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;font-size:12px;font-weight:700;">
+                <option value="">— Load preset —</option>
+              </select>
+              <button id="setBaseLoadPreset" type="button" class="btn secondary" style="padding:6px 10px;font-size:11px;font-weight:800;">Load</button>
+              <button id="setBaseSavePreset" type="button" class="btn secondary" style="padding:6px 10px;font-size:11px;font-weight:800;">Save as…</button>
+              <button id="setBaseCopyPrevSet" type="button" class="btn secondary" style="padding:6px 10px;font-size:11px;font-weight:800;">Copy prev set</button>
+            </div>
             <div id="setBaseCourt" class="rotation-court"></div>
           </div>
         </div>
@@ -942,6 +1073,42 @@
     </div>
   </div>
 
+  <div id="swapSetsBackdrop" class="modal-backdrop hidden modal-backdrop-el" style="display:none" role="dialog" aria-modal="true" aria-labelledby="swapSetsTitle">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="swapSetsTitle">Swap Sets</div>
+        <button id="swapSetsClose" type="button" class="icon-btn" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px;color:#374151;line-height:1.5;margin:0 0 12px;">Exchange all stats and scores between two sets in the current match. Nothing is deleted — data moves with each set.</p>
+        <div class="confirm-row" style="margin-bottom:10px;"><div class="confirm-label">Match</div><div id="swapSetsMatch" class="confirm-value"></div></div>
+        <div class="form-row" style="display:flex;gap:10px;flex-wrap:wrap;">
+          <div class="field" style="flex:1;min-width:120px;">
+            <label>Set A</label>
+            <select id="swapSetA" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px;font-size:14px;font-weight:700;">
+              <option value="1">Set 1</option>
+              <option value="2">Set 2</option>
+              <option value="3" selected>Set 3</option>
+            </select>
+          </div>
+          <div class="field" style="flex:1;min-width:120px;">
+            <label>Set B</label>
+            <select id="swapSetB" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px;font-size:14px;font-weight:700;">
+              <option value="1" selected>Set 1</option>
+              <option value="2">Set 2</option>
+              <option value="3">Set 3</option>
+            </select>
+          </div>
+        </div>
+        <div id="swapSetsPreview" style="margin-top:12px;font-size:12px;color:#6b7280;line-height:1.5;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px;"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="swapSetsCancel" type="button" class="btn secondary">Cancel</button>
+        <button id="swapSetsOk" type="button" class="btn">Swap Sets</button>
+      </div>
+    </div>
+  </div>
+
   <div id="editBackdrop" class="modal-backdrop hidden modal-backdrop-el" style="display:none" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
     <div class="modal" style="max-height:85vh;display:flex;flex-direction:column;">
       <div class="modal-header">
@@ -953,6 +1120,39 @@
     </div>
   </div>
 
+  <div id="nextSetBackdrop" class="modal-backdrop hidden modal-backdrop-el" style="display:none" role="dialog" aria-modal="true" aria-labelledby="nextSetTitle">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="nextSetTitle">Next Set Lineup</div>
+        <button id="nextSetClose" type="button" class="icon-btn" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="nextSetBody" style="font-size:13px;color:#374151;line-height:1.5;margin:0 0 12px;"></p>
+        <div class="field" id="nextSetPresetField" style="display:none;margin-bottom:10px;">
+          <label style="font-size:11px;font-weight:800;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;">Lineup preset</label>
+          <select id="nextSetPresetSelect" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px;font-size:14px;font-weight:700;">
+            <option value="">— Optional preset —</option>
+          </select>
+        </div>
+        <div class="field">
+          <label style="font-size:11px;font-weight:800;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;">Starting rotation</label>
+          <select id="nextSetStartRot" style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px;font-size:14px;font-weight:700;">
+            <option value="1">Rot 1</option><option value="2">Rot 2</option><option value="3">Rot 3</option>
+            <option value="4">Rot 4</option><option value="5">Rot 5</option><option value="6">Rot 6</option>
+          </select>
+        </div>
+        <button id="nextSetCopyPrev" type="button" class="btn secondary" style="width:100%;margin-top:8px;font-size:12px;font-weight:800;">Copy previous set lineup</button>
+        <p style="font-size:11px;color:#9ca3af;margin-top:8px;line-height:1.4;">Tip: use <strong>Set Base</strong> in Rotation to save presets or a different lineup per set before advancing.</p>
+      </div>
+      <div class="modal-footer">
+        <button id="nextSetCancel" type="button" class="btn secondary">Cancel</button>
+        <button id="nextSetOk" type="button" class="btn">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="rotPlayerMenu" class="rot-player-menu" role="dialog" aria-label="Player rules"></div>
+
   <script>
     function loginSwitchTab(tab) {
       document.getElementById('loginPanelSignin').classList.toggle('active', tab==='signin');
@@ -962,6 +1162,6 @@
       document.getElementById('loginError').classList.remove('visible');
     }
   </script>
-  <script type="module" src="app.js?v=0.1.143"></script>
+  <script type="module" src="app.js?v=0.1.160"></script>
 </body>
 </html>

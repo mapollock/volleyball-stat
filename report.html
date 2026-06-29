@@ -319,8 +319,8 @@ function renderTeam(team){
   }
 
   // ── 5. UNFORCED ERRORS ─────────────────────────────────────────────────
-  html+='<div class="section"><div class="section-title">Unforced Errors by Set</div><div class="tbl-wrap"><table>';
-  html+='<thead><tr><th class="left">Set</th><th>Total</th><th>Hit Err</th><th>Srv Err</th><th>Pass Err</th><th>Net</th><th>2-Touch</th><th>OOR</th></tr></thead><tbody>';
+  html+='<div class="section"><div class="section-title">Errors by Set</div><div class="tbl-wrap"><table>';
+  html+='<thead><tr><th class="left">Set</th><th>Total</th><th>Hit Err</th><th>Srv Err</th><th>Pass Err</th><th>Net</th><th>BHE</th><th>OOR</th></tr></thead><tbody>';
   var teamE={t:0,h:0,s:0,p:0,n:0,two:0,r:0};
   cols.forEach(function(c){
     var e={t:0,h:0,s:0,p:0,n:0,two:0,r:0};
@@ -401,8 +401,8 @@ function renderPlayer(team){
 
   // Errors
   if(ts.totErr>0){
-    html+='<div class="subsection-title">Unforced Errors</div><div class="tbl-wrap"><table>';
-    html+='<thead><tr><th class="left">Set</th><th>Total</th><th>Hit</th><th>Serve</th><th>Pass</th><th>Net</th><th>2-Touch</th><th>OOR</th></tr></thead><tbody>';
+    html+='<div class="subsection-title">Errors</div><div class="tbl-wrap"><table>';
+    html+='<thead><tr><th class="left">Set</th><th>Total</th><th>Hit</th><th>Serve</th><th>Pass</th><th>Net</th><th>BHE</th><th>OOR</th></tr></thead><tbody>';
     cols.forEach(function(c){
       var s=sumP(team,pid,[c.day],[c.match],[c.set]); var st=stats(s);
       if(!st.totErr) return;
