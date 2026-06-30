@@ -10,7 +10,7 @@
  *   Manual +our score also triggers rotation when we didn't have the ball.
  */
 
-var APP_VERSION = '0.1.170';
+var APP_VERSION = '0.1.171';
 console.log('[VolleyStat] v' + APP_VERSION + ' loaded');
 
 var STORAGE_KEY = 'volleystat_v1'; // stable key — do not change between versions
@@ -3511,12 +3511,6 @@ document.addEventListener('DOMContentLoaded', function(){
             ? ((onCourt ? '🏐 ' : '') + (player.number ? '#'+player.number+' ' : '') + firstName(player.name))
             : ('L' + (slotIndex + 1) + ' +');
           chip.addEventListener('click', function(e){
-            if (player && pid && activePlayerId && getCourtPosForPlayer(team, activePlayerId)
-                && playerIdKey(pid) !== playerIdKey(activePlayerId)){
-              e.stopPropagation();
-              tryUnifiedCourtEntry(team, pid);
-              return;
-            }
             e.stopPropagation();
             openLiberoSlotPicker(team, slotIndex);
           });
