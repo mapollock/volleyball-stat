@@ -10,7 +10,7 @@
  *   Manual +our score also triggers rotation when we didn't have the ball.
  */
 
-var APP_VERSION = '0.1.166';
+var APP_VERSION = '0.1.167';
 console.log('[VolleyStat] v' + APP_VERSION + ' loaded');
 
 var STORAGE_KEY = 'volleystat_v1'; // stable key — do not change between versions
@@ -5757,7 +5757,6 @@ document.addEventListener('DOMContentLoaded', function(){
     refreshLastActionFromHistory(team);
     if (exportName) exportName.dataset.userEdited = '';
     syncExportNameDefault();
-    populateMobilePlayerSelect();
     renderScore();
     renderUnifiedCourt();
   };
@@ -6400,7 +6399,7 @@ document.addEventListener('DOMContentLoaded', function(){
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
         initTeamSelect(); initMatchSelect(); applyModeToUI();
         syncExportNameDefault(); renderTable();
-        updateOnboardingAndControls(); populateMobilePlayerSelect(); renderScore();
+        updateOnboardingAndControls(); renderUnifiedCourt(); renderScore();
         input.value = '';
         var panel = byId('syncDevicePanel');
         if (panel) panel.classList.add('hidden');
@@ -6643,10 +6642,10 @@ document.addEventListener('DOMContentLoaded', function(){
     syncExportNameDefault();
     renderTable();
     updateOnboardingAndControls();
-    populateMobilePlayerSelect();
     syncActivePlayerToPossession();
     renderScore();
     renderRotationStrip();
+    renderUnifiedCourt();
   }
   window._vsRefreshAfterSync = refreshAllUI;
 
@@ -6815,12 +6814,8 @@ document.addEventListener('DOMContentLoaded', function(){
   if (mobileExportBtn && exportBtn) mobileExportBtn.addEventListener('click', function(){ exportBtn.click(); });
   if (mobileResetBtn) mobileResetBtn.addEventListener('click', function(){ if (window._vsReset) window._vsReset(); });
 
-  // Re-populate mobile player select after roster changes
-  var origBuildRosterList = buildRosterList;
-  // Patch: after any renderTable call, repopulate player select
-  var origRenderTable = renderTable;
-  function afterRender(){ populateMobilePlayerSelect(); renderScore(); }
-  var origRenderTableWrapped = renderTable;
+  // Re-render court after stats table updates
+  function afterRender(){ renderUnifiedCourt(); renderScore(); }
   // Use a MutationObserver on statsBody to detect re-renders
   var statsBodyEl = byId('statsBody');
   if (statsBodyEl){
