@@ -1,5 +1,5 @@
-/* VolleyStat Service Worker — pairs with APP_VERSION 0.1.175 */
-var CACHE = 'volleystat-v61';
+/* VolleyStat Service Worker — pairs with APP_VERSION 0.1.176 */
+var CACHE = 'volleystat-v62';
 var ASSETS = [
   './',
   './login.html',

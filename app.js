@@ -10,7 +10,7 @@
  *   Manual +our score also triggers rotation when we didn't have the ball.
  */
 
-var APP_VERSION = '0.1.175';
+var APP_VERSION = '0.1.176';
 console.log('[VolleyStat] v' + APP_VERSION + ' loaded');
 
 var STORAGE_KEY = 'volleystat_v1'; // stable key — do not change between versions
@@ -4161,44 +4161,25 @@ document.addEventListener('DOMContentLoaded', function(){
     var opts = document.createElement('div');
     opts.className = 'rot-menu-options';
 
-    // ── Auto-sub (or Libero for MB) ─────────────────────────────────────────
-    var autoBtn = document.createElement('button');
-    autoBtn.type = 'button';
-    var autoConfigured = slotHasAutoSubConfigured(team, baseSlot);
-    autoBtn.className = 'rot-menu-opt-btn' + (_rotMenuExpand === 'autosub' ? ' active' : '') + (autoConfigured ? ' configured' : '');
-    autoBtn.textContent = isMBBaseSlot(baseSlot) ? '1. Libero' : '1. Auto-sub';
-    autoBtn.addEventListener('click', function(e){
-      e.stopPropagation();
-      _rotMenuExpand = (_rotMenuExpand === 'autosub') ? null : 'autosub';
-      buildRotPlayerMenu(team, baseSlot, anchor);
-      positionRotPlayerMenu(menu, anchor);
-    });
-    opts.appendChild(autoBtn);
-    if (_rotMenuExpand === 'autosub'){
-      var autoExpand = document.createElement('div');
-      autoExpand.className = 'rot-menu-expand';
-      if (isMBBaseSlot(baseSlot)){
-        var mbLabel = baseSlot === 3 ? 'MB2' : 'MB1';
-        var libOn = isLiberoReplaceSlot(team, baseSlot);
-        var libRow = document.createElement('div');
-        libRow.className = 'rot-menu-row';
-        libRow.appendChild(document.createTextNode('Libero replaces back row'));
-        libRow.appendChild(makeMenuToggle(libOn, function(on){
-          toggleLiberoReplaceSlot(team, baseSlot, on);
-          if (!on && team.rotation.liberoActive && team.rotation.liberoReplacesBaseSlot === baseSlot){
-            deactivateLibero(team);
-          }
-          applyRulesForOffset(team, team.rotation.offset || 0);
-          saveState();
-          renderRotationWheel();
-          refreshMenu();
-        }));
-        autoExpand.appendChild(libRow);
-        var libHint = document.createElement('div');
-        libHint.className = 'rot-menu-expand-hint';
-        libHint.textContent = 'Default on. At pos 1, libero replaces unless “I will serve” is on (Serving below). Turn off only if libero is unavailable — middle plays back row.';
-        autoExpand.appendChild(libHint);
-      } else if (isSubRuleSlot(baseSlot)){
+    var hasAutoSubSection = isSubRuleSlot(baseSlot);
+
+    // ── Auto-sub (OH / RS / S slots only — libero replace is set via chips above) ──
+    if (hasAutoSubSection){
+      var autoBtn = document.createElement('button');
+      autoBtn.type = 'button';
+      var autoConfigured = !!(team.rotation.autoSubs && team.rotation.autoSubs[baseSlot]);
+      autoBtn.className = 'rot-menu-opt-btn' + (_rotMenuExpand === 'autosub' ? ' active' : '') + (autoConfigured ? ' configured' : '');
+      autoBtn.textContent = '1. Auto-sub';
+      autoBtn.addEventListener('click', function(e){
+        e.stopPropagation();
+        _rotMenuExpand = (_rotMenuExpand === 'autosub') ? null : 'autosub';
+        buildRotPlayerMenu(team, baseSlot, anchor);
+        positionRotPlayerMenu(menu, anchor);
+      });
+      opts.appendChild(autoBtn);
+      if (_rotMenuExpand === 'autosub'){
+        var autoExpand = document.createElement('div');
+        autoExpand.className = 'rot-menu-expand';
         var hasSub = !!(team.rotation.autoSubs && team.rotation.autoSubs[baseSlot]);
         var selectedSubId = hasSub ? team.rotation.autoSubs[baseSlot] : null;
         var selectedSub = selectedSubId
@@ -4257,22 +4238,29 @@ document.addEventListener('DOMContentLoaded', function(){
           clearRow.appendChild(clearBtn);
           autoExpand.appendChild(clearRow);
         }
+        opts.appendChild(autoExpand);
       }
-      opts.appendChild(autoExpand);
     }
 
-    menu.appendChild(opts);
+    if (opts.childNodes.length) menu.appendChild(opts);
 
     // ── Serving ──────────────────────────────────────────────────────────────
+    var hasServeSection = isLiberoReplaceSlot(team, baseSlot) || hasAutoSubSection;
+    if (!hasServeSection){
+      var emptyHint = document.createElement('div');
+      emptyHint.className = 'rot-menu-expand-hint';
+      emptyHint.style.marginTop = '4px';
+      emptyHint.textContent = 'Use Libero replaces chips above to include this player.';
+      menu.appendChild(emptyHint);
+    } else {
     var serveSec = document.createElement('div');
     serveSec.className = 'rot-menu-section';
     var serveLbl = document.createElement('div');
     serveLbl.className = 'rot-menu-label';
-    serveLbl.textContent = '2. Serving';
+    serveLbl.textContent = (hasAutoSubSection ? '2. ' : '1. ') + 'Serving';
     serveSec.appendChild(serveLbl);
 
-    if (isMBBaseSlot(baseSlot)){
-      var mbLabel2 = baseSlot === 3 ? 'MB2' : 'MB1';
+    if (isLiberoReplaceSlot(team, baseSlot)){
       var iServe = getLiberoServeForBaseSlot(team) === baseSlot && team.rotation.liberoOriginalServesAtPos1 !== false;
       var serveRow = document.createElement('div');
       serveRow.className = 'rot-menu-row';
@@ -4287,26 +4275,11 @@ document.addEventListener('DOMContentLoaded', function(){
         refreshMenu();
       }));
       serveSec.appendChild(serveRow);
-    } else if (isLiberoReplaceSlot(team, baseSlot)){
-      var libServe = getLiberoServeForBaseSlot(team) === baseSlot && team.rotation.liberoOriginalServesAtPos1 !== false;
-      var libServeRow = document.createElement('div');
-      libServeRow.className = 'rot-menu-row';
-      libServeRow.appendChild(document.createTextNode('I will serve'));
-      libServeRow.appendChild(makeMenuToggle(libServe, function(on){
-        team.rotation.liberoServeForBaseSlot = baseSlot;
-        team.rotation.liberoOriginalServesAtPos1 = on;
-        syncLegacyLiberoFlags(team);
-        applyRulesForOffset(team, team.rotation.offset || 0);
-        saveState();
-        renderRotationWheel();
-        refreshMenu();
-      }));
-      serveSec.appendChild(libServeRow);
-      var libServeNote = document.createElement('div');
-      libServeNote.className = 'rot-menu-expand-hint';
-      libServeNote.textContent = 'When this player is at pos 1, turn on if they serve instead of the libero.';
-      serveSec.appendChild(libServeNote);
-    } else if (isSubRuleSlot(baseSlot)){
+      var serveNote = document.createElement('div');
+      serveNote.className = 'rot-menu-expand-hint';
+      serveNote.textContent = 'At pos 1, turn on if this player serves instead of the libero.';
+      serveSec.appendChild(serveNote);
+    } else if (hasAutoSubSection){
       var subInPos = (team.rotation.autoSubPos && team.rotation.autoSubPos[baseSlot]) || 1;
       var subServes = subInPos === 1;
       var serveRow2 = document.createElement('div');
@@ -4329,6 +4302,7 @@ document.addEventListener('DOMContentLoaded', function(){
       serveSec.appendChild(serveNote);
     }
     menu.appendChild(serveSec);
+    }
 
     var actions = document.createElement('div');
     actions.className = 'rot-menu-actions';
@@ -4519,7 +4493,7 @@ document.addEventListener('DOMContentLoaded', function(){
           closeRotPlayerMenu();
           return;
         }
-        _rotMenuExpand = 'autosub';
+        _rotMenuExpand = isSubRuleSlot(baseSlot) ? 'autosub' : null;
         openRotPlayerMenu(wrap, pos);
       });
 
