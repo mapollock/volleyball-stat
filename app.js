@@ -10,7 +10,7 @@
  *   Manual +our score also triggers rotation when we didn't have the ball.
  */
 
-var APP_VERSION = '0.1.171';
+var APP_VERSION = '0.1.174';
 console.log('[VolleyStat] v' + APP_VERSION + ' loaded');
 
 var STORAGE_KEY = 'volleystat_v1'; // stable key — do not change between versions
@@ -283,6 +283,7 @@ function ensureRotation(team){
   if (team.rotation.liberoForMB1 === undefined) team.rotation.liberoForMB1 = true;
   if (team.rotation.liberoForMB2 === undefined) team.rotation.liberoForMB2 = true;
   if (team.rotation.liberoAutoOnRotate === undefined) team.rotation.liberoAutoOnRotate = true;
+  migrateLiberoRules(team);
   if (team.rotation.firstBallPending === undefined) team.rotation.firstBallPending = false;
   if (team.rotation.firstBallMode === undefined) team.rotation.firstBallMode = null;
   // Libero must never be tracked as a bench auto-sub
@@ -900,6 +901,93 @@ function restoreRotationOneBase(team){
 
 function mbBaseSlotForLabel(label){ return label === 'MB2' ? 3 : 6; }
 
+function migrateLiberoRules(team){
+  if (!team || !team.rotation) return;
+  if (team.rotation._liberoRulesMigrated) return;
+  if (team.rotation.liberoReplaceBaseSlot == null){
+    if (team.rotation.liberoForMB2 === false && team.rotation.liberoForMB1 !== false){
+      team.rotation.liberoReplaceBaseSlot = 6;
+    } else if (team.rotation.liberoForMB1 === false && team.rotation.liberoForMB2 !== false){
+      team.rotation.liberoReplaceBaseSlot = 3;
+    } else {
+      team.rotation.liberoReplaceBaseSlot = 6;
+    }
+  }
+  if (team.rotation.liberoReplaceEnabled == null){
+    team.rotation.liberoReplaceEnabled = !(team.rotation.liberoForMB1 === false && team.rotation.liberoForMB2 === false);
+  }
+  if (team.rotation.liberoServeForBaseSlot == null){
+    team.rotation.liberoServeForBaseSlot = team.rotation.liberoMB2 !== false ? 3 : 6;
+  }
+  if (team.rotation.liberoOriginalServesAtPos1 == null){
+    team.rotation.liberoOriginalServesAtPos1 = true;
+  }
+  team.rotation._liberoRulesMigrated = true;
+  syncLegacyLiberoFlags(team);
+}
+
+function syncLegacyLiberoFlags(team){
+  if (!team || !team.rotation) return;
+  var slot = getLiberoReplaceBaseSlot(team);
+  var enabled = isLiberoReplaceConfigured(team);
+  team.rotation.liberoForMB1 = enabled && slot === 6;
+  team.rotation.liberoForMB2 = enabled && slot === 3;
+  team.rotation.liberoMB2 = getLiberoServeForBaseSlot(team) === 3;
+}
+
+function getLiberoReplaceBaseSlot(team){
+  ensureRotation(team);
+  var slot = parseInt(team.rotation.liberoReplaceBaseSlot, 10);
+  if (!slot || slot < 1 || slot > 6) slot = 6;
+  return slot;
+}
+
+function getLiberoServeForBaseSlot(team){
+  ensureRotation(team);
+  var slot = parseInt(team.rotation.liberoServeForBaseSlot, 10);
+  if (!slot || slot < 1 || slot > 6) slot = getLiberoReplaceBaseSlot(team);
+  return slot;
+}
+
+function isLiberoReplaceConfigured(team){
+  ensureRotation(team);
+  return team.rotation.liberoReplaceEnabled !== false;
+}
+
+function formatLiberoReplaceLabel(team, baseSlot){
+  if (!team || !baseSlot) return '—';
+  var role = BASE_SLOT_LABELS[baseSlot] || ('Slot ' + baseSlot);
+  var pid = (team.rotation.base || {})[baseSlot];
+  var player = pid ? (team.players || []).find(function(p){ return p.id === pid; }) : null;
+  if (player){
+    return '#' + (player.number || '?') + ' ' + firstName(player.name) + ' · ' + role;
+  }
+  return role;
+}
+
+function setLiberoReplaceBaseSlot(team, baseSlot, enabled){
+  ensureRotation(team);
+  if (enabled === false){
+    team.rotation.liberoReplaceEnabled = false;
+  } else {
+    team.rotation.liberoReplaceEnabled = true;
+    team.rotation.liberoReplaceBaseSlot = Math.max(1, Math.min(6, parseInt(baseSlot, 10) || 6));
+  }
+  syncLegacyLiberoFlags(team);
+}
+
+function findLiberoEligibleCourtPos(team, offset, force){
+  if (!isLiberoReplaceConfigured(team)) return null;
+  ensureRotation(team);
+  autoFillBaseFromRoster(team);
+  var off = offset !== undefined ? offset : (team.rotation.offset || 0);
+  var baseSlot = getLiberoReplaceBaseSlot(team);
+  var pos = rotatedPos(baseSlot, off);
+  if (!BACK_ROW_POSITIONS[pos]) return null;
+  if (shouldSkipLiberoAtPos1(team, baseSlot, pos, force)) return null;
+  return pos;
+}
+
 function isMiddleBackRowPos(courtPos){
   return courtPos === 1 || courtPos === 5 || courtPos === 6;
 }
@@ -907,8 +995,14 @@ function isMiddleBackRowPos(courtPos){
 function getLiberoCourtPos(team){
   if (!team || !team.rotation || !team.rotation.liberoActive) return null;
   if (team.rotation.liberoCourtPos) return team.rotation.liberoCourtPos;
+  if (team.rotation.liberoReplacesBaseSlot){
+    return rotatedPos(team.rotation.liberoReplacesBaseSlot, team.rotation.offset || 0);
+  }
   if (team.rotation.liberoSlot){
     return team.rotation.liberoSlot === 'MB2' ? getMB2CurrentPos(team) : getMB1CurrentPos(team);
+  }
+  if (isLiberoReplaceConfigured(team)){
+    return rotatedPos(getLiberoReplaceBaseSlot(team), team.rotation.offset || 0);
   }
   return null;
 }
@@ -916,22 +1010,26 @@ function getLiberoCourtPos(team){
 function syncLiberoSlotFromCourtPos(team, courtPos){
   if (!team || !team.rotation || !courtPos) return;
   team.rotation.liberoCourtPos = courtPos;
-  var mb1 = getMB1CurrentPos(team);
-  var mb2 = getMB2CurrentPos(team);
-  if (courtPos === mb1) team.rotation.liberoSlot = 'MB1';
-  else if (courtPos === mb2) team.rotation.liberoSlot = 'MB2';
-  else team.rotation.liberoSlot = null;
+  var baseSlot = inverseBaseForCurrentPos(courtPos, team.rotation.offset || 0);
+  team.rotation.liberoReplacesBaseSlot = baseSlot;
+  var label = middleLabelForBaseSlot(baseSlot);
+  team.rotation.liberoSlot = label || null;
+}
+
+function shouldSkipLiberoAtPos1(team, baseSlot, courtPos, force){
+  if (force || courtPos !== 1) return false;
+  if (rotatedPos(baseSlot, team.rotation.offset || 0) !== 1) return false;
+  return team.rotation.liberoOriginalServesAtPos1 !== false;
 }
 
 function canLiberoReplaceAtPos(team, courtPos, force){
   if (!courtPos || !BACK_ROW_POSITIONS[courtPos]) return false;
+  if (force) return true;
   if (courtPos !== 1) return true;
-  var mb1 = getMB1CurrentPos(team);
-  var mb2 = getMB2CurrentPos(team);
-  if (courtPos === mb1 && shouldSkipLiberoForMiddle(team, 'MB1', 1, force)) return false;
-  if (courtPos === mb2 && shouldSkipLiberoForMiddle(team, 'MB2', 1, force)) return false;
-  if (courtPos !== mb1 && courtPos !== mb2) return !!force;
-  return true;
+  var replaceSlot = getLiberoReplaceBaseSlot(team);
+  if (!isLiberoReplaceConfigured(team)) return false;
+  if (rotatedPos(replaceSlot, team.rotation.offset || 0) !== 1) return true;
+  return !shouldSkipLiberoAtPos1(team, replaceSlot, 1, force);
 }
 
 function activateLiberoAtPos(team, courtPos, liberoId, force){
@@ -972,16 +1070,15 @@ function middleServesInRotation(team, label){
 
 function liberoEnabledForMiddle(team, label){
   ensureRotation(team);
-  if (label === 'MB1') return team.rotation.liberoForMB1 !== false;
-  if (label === 'MB2') return team.rotation.liberoForMB2 !== false;
-  return false;
+  if (!isLiberoReplaceConfigured(team)) return false;
+  var slot = label === 'MB2' ? 3 : 6;
+  return getLiberoReplaceBaseSlot(team) === slot;
 }
 
-// Pos 1: libero replaces unless "I will serve" is on (manual Libero In can override with force).
+// Legacy helper — prefer shouldSkipLiberoAtPos1 + getLiberoReplaceBaseSlot.
 function shouldSkipLiberoForMiddle(team, label, courtPos, force){
-  if (force) return false;
-  if (courtPos !== 1) return false;
-  return middleServesInRotation(team, label);
+  var slot = label === 'MB2' ? 3 : 6;
+  return shouldSkipLiberoAtPos1(team, slot, courtPos, force);
 }
 
 function middleLabelForBaseSlot(baseSlot){
@@ -990,32 +1087,28 @@ function middleLabelForBaseSlot(baseSlot){
   return null;
 }
 
-// Which middle (if any) should have the libero on court right now.
+// Which back-row court position should have the libero right now.
 function findLiberoEligibleMB(team, offset, force){
-  ensureRotation(team);
-  autoFillBaseFromRoster(team);
-  var off = offset !== undefined ? offset : (team.rotation.offset || 0);
-  var mbSlots = [3, 6];
-  for (var i = 0; i < mbSlots.length; i++){
-    var baseSlot = mbSlots[i];
-    var label = middleLabelForBaseSlot(baseSlot);
-    if (!label) continue;
-    var pos = rotatedPos(baseSlot, off);
-    if (!isMiddleBackRowPos(pos)) continue;
-    if (!liberoEnabledForMiddle(team, label)) continue;
-    if (shouldSkipLiberoForMiddle(team, label, pos, force)) continue;
-    return label;
-  }
-  return null;
+  var pos = findLiberoEligibleCourtPos(team, offset, force);
+  if (!pos) return null;
+  var baseSlot = inverseBaseForCurrentPos(pos, offset !== undefined ? offset : (team.rotation.offset || 0));
+  return middleLabelForBaseSlot(baseSlot) || formatLiberoReplaceLabel(team, baseSlot);
 }
 
 function getLiberoDisplayTarget(team){
   ensureRotation(team);
   if (team.rotation.liberoActive){
     var cp = getLiberoCourtPos(team);
-    if (cp) return 'Pos ' + cp;
+    if (cp){
+      var bs = inverseBaseForCurrentPos(cp, team.rotation.offset || 0);
+      return formatLiberoReplaceLabel(team, bs);
+    }
   }
-  return findLiberoEligibleMB(team);
+  if (!isLiberoReplaceConfigured(team)) return null;
+  var pos = findLiberoEligibleCourtPos(team);
+  var bs = getLiberoReplaceBaseSlot(team);
+  if (!pos) return formatLiberoReplaceLabel(team, bs) + ' (front row)';
+  return formatLiberoReplaceLabel(team, bs);
 }
 
 function tryActivateLibero(team, offset, force){
@@ -1036,11 +1129,8 @@ function tryActivateLibero(team, offset, force){
   if (!libId || !isLiberoPlayer(team, libId, mk)) libId = getPreferredLiberoId(team, mk);
   if (!libId) return false;
 
-  var label = findLiberoEligibleMB(team, off, force);
-  if (label){
-    var pos = rotatedPos(mbBaseSlotForLabel(label), off);
-    if (activateLiberoAtPos(team, pos, libId, force)) return true;
-  }
+  var pos = findLiberoEligibleCourtPos(team, off, force);
+  if (pos && activateLiberoAtPos(team, pos, libId, force)) return true;
   return false;
 }
 
@@ -1049,6 +1139,7 @@ function deactivateLibero(team){
   team.rotation.liberoActive = false;
   team.rotation.liberoSlot = null;
   team.rotation.liberoCourtPos = null;
+  team.rotation.liberoReplacesBaseSlot = null;
 }
 function getLineupBaseForReplay(team){
   ensureRotation(team);
@@ -1388,7 +1479,12 @@ function cloneRotationForUndo(rot){
     srMode: !!rot.srMode,
     srSystem: rot.srSystem || '5-1',
     subCount: rot.subCount || 0,
-    liberoMB2: rot.liberoMB2 !== false
+    liberoMB2: rot.liberoMB2 !== false,
+    liberoReplaceBaseSlot: rot.liberoReplaceBaseSlot != null ? rot.liberoReplaceBaseSlot : 6,
+    liberoServeForBaseSlot: rot.liberoServeForBaseSlot != null ? rot.liberoServeForBaseSlot : 6,
+    liberoReplaceEnabled: rot.liberoReplaceEnabled !== false,
+    liberoOriginalServesAtPos1: rot.liberoOriginalServesAtPos1 !== false,
+    liberoReplacesBaseSlot: rot.liberoReplacesBaseSlot || null
   };
   if (rot.autoSubs && Object.keys(rot.autoSubs).length) snap.autoSubs = Object.assign({}, rot.autoSubs);
   if (rot.autoSubPos && Object.keys(rot.autoSubPos).length) snap.autoSubPos = Object.assign({}, rot.autoSubPos);
@@ -3369,10 +3465,21 @@ document.addEventListener('DOMContentLoaded', function(){
   }
 
   function slotHasRules(team, slot){
-    if (!team || !team.rotation) return false;
-    if (isMBBaseSlot(slot)) return true;
+    return slotHasAutoSubConfigured(team, slot);
+  }
+
+  function slotHasAutoSubConfigured(team, slot){
+    if (!team || !team.rotation || !slot) return false;
     if (isSubRuleSlot(slot)) return !!(team.rotation.autoSubs && team.rotation.autoSubs[slot]);
+    if (isLiberoReplaceConfigured(team) && getLiberoReplaceBaseSlot(team) === slot) return true;
     return false;
+  }
+
+  function getAutoSubPlayer(team, baseSlot){
+    if (!team || !baseSlot || !isSubRuleSlot(baseSlot)) return null;
+    var subId = (team.rotation.autoSubs || {})[baseSlot];
+    if (!subId) return null;
+    return (team.players || []).find(function(p){ return p.id === subId; }) || null;
   }
 
   var _rotMenuAnchor = null;
@@ -3435,26 +3542,66 @@ document.addEventListener('DOMContentLoaded', function(){
       return;
     }
     btn.disabled = false;
-    var courtPos = getLiberoCourtPos(team);
-    var suffix = courtPos ? (' · Pos ' + courtPos) : (getLiberoDisplayTarget(team) ? (' · ' + getLiberoDisplayTarget(team)) : '');
+    var targetLabel = getLiberoDisplayTarget(team);
     if (team.rotation.liberoActive){
+      var courtPos = getLiberoCourtPos(team);
       if (designations.length > 1){
         btn.textContent = 'Swap Libero';
         btn.title = 'Switch to the other designated libero (no sub charged)';
       } else {
-        btn.textContent = 'Libero Out' + suffix;
+        btn.textContent = 'Libero Out' + (targetLabel ? (' · ' + targetLabel) : '') + (courtPos ? (' · Pos ' + courtPos) : '');
         btn.title = 'Remove libero from court';
       }
       btn.style.background = LIBERO_COLORS.onCourtBg;
       btn.style.color = LIBERO_COLORS.onCourtText;
       btn.style.borderColor = LIBERO_COLORS.onCourtBorder;
     } else {
-      btn.textContent = 'Libero In' + suffix;
+      btn.textContent = 'Libero In' + (targetLabel ? (' · ' + targetLabel) : '');
       btn.style.background = '';
       btn.style.color = '';
       btn.style.borderColor = '';
-      btn.title = 'Put libero on court at back row';
+      btn.title = targetLabel
+        ? ('Put libero in for ' + targetLabel)
+        : 'Put libero on court at back row';
     }
+  }
+
+  function syncLiberoRulesUI(team){
+    var row = byId('liberoRulesRow');
+    var replaceSel = byId('liberoReplaceSelect');
+    var serveSel = byId('liberoServeForSelect');
+    var serveCheck = byId('liberoOriginalServesCheck');
+    if (!row || !replaceSel || !serveSel) return;
+    if (_setBaseMode || !team){
+      row.style.display = 'none';
+      return;
+    }
+    row.style.display = 'flex';
+    ensureRotation(team);
+    autoFillBaseFromRoster(team);
+
+    function fillSelect(selectEl, selectedSlot){
+      var cur = selectEl.value;
+      selectEl.innerHTML = '';
+      var offOpt = document.createElement('option');
+      offOpt.value = 'off';
+      offOpt.textContent = '— Off —';
+      selectEl.appendChild(offOpt);
+      for (var s=1; s<=6; s++){
+        var opt = document.createElement('option');
+        opt.value = String(s);
+        opt.textContent = formatLiberoReplaceLabel(team, s);
+        selectEl.appendChild(opt);
+      }
+      if (!isLiberoReplaceConfigured(team)) selectEl.value = 'off';
+      else selectEl.value = String(getLiberoReplaceBaseSlot(team));
+      if (cur && selectEl.querySelector('option[value="' + cur + '"]')) selectEl.value = cur;
+      if (selectedSlot) selectEl.value = isLiberoReplaceConfigured(team) ? String(selectedSlot) : 'off';
+    }
+
+    fillSelect(replaceSel);
+    fillSelect(serveSel, getLiberoServeForBaseSlot(team));
+    if (serveCheck) serveCheck.checked = team.rotation.liberoOriginalServesAtPos1 !== false;
   }
 
   function toggleLiberoStart(team){
@@ -3582,13 +3729,14 @@ document.addEventListener('DOMContentLoaded', function(){
       if (panel) panel.classList.remove('open');
       if (coachCtrls) coachCtrls.style.display = 'flex';
       if (setBaseActs) setBaseActs.style.display = 'none';
-      if (hint) hint.textContent = 'Double-tap a player for Sub · Auto-sub · Serving';
+      if (hint) hint.textContent = 'Double-tap a player for Auto-sub · Serving';
       if (subCount) subCount.style.display = '';
       if (doneBtn) doneBtn.style.display = '';
     }
     updateLiberoBtn(activeTeam());
     updateStartGameBtn(activeTeam());
     syncLiberoSelect(activeTeam());
+    syncLiberoRulesUI(activeTeam());
   }
 
   function syncLineupPresetSelect(selectEl, team){
@@ -3942,72 +4090,17 @@ document.addEventListener('DOMContentLoaded', function(){
     var opts = document.createElement('div');
     opts.className = 'rot-menu-options';
 
-    // ── 1. Sub (immediate / injury / discipline) ─────────────────────────────
-    var subBtn = document.createElement('button');
-    subBtn.type = 'button';
-    subBtn.className = 'rot-menu-opt-btn' + (_rotMenuExpand === 'sub' ? ' active' : '');
-    subBtn.textContent = '1. Sub';
-    subBtn.addEventListener('click', function(e){
-      e.stopPropagation();
-      openRotationSubPicker(team, baseSlot, 'rotationManualSub', 'sub');
-    });
-    opts.appendChild(subBtn);
-
-    if (BACK_ROW_POSITIONS[baseCourtPos] && getLiberoDesignations(team).length){
-      var libPosBtn = document.createElement('button');
-      libPosBtn.type = 'button';
-      libPosBtn.className = 'rot-menu-opt-btn';
-      libPosBtn.textContent = 'Libero In · Pos ' + baseCourtPos;
-      libPosBtn.addEventListener('click', function(e){
-        e.stopPropagation();
-        if (!team.rotation.liberoId) team.rotation.liberoId = getLiberoDesignations(team)[0];
-        if (activateLiberoAtPos(team, baseCourtPos, null, true)){
-          saveState();
-          closeRotPlayerMenu();
-          renderRotationWheel();
-          renderTable();
-        } else {
-          alert('Libero cannot replace server at pos 1 right now.');
-        }
-      });
-      opts.appendChild(libPosBtn);
-    }
-
-    if (_rotMenuExpand === 'sub'){
-      var subExpand = document.createElement('div');
-      subExpand.className = 'rot-menu-expand';
-      var subHint = document.createElement('div');
-      subHint.className = 'rot-menu-expand-hint';
-      subHint.textContent = 'Replace on court immediately (counts toward subs unless libero).';
-      subExpand.appendChild(subHint);
-      var subBench = benchManualSubCandidates(team, baseSlot);
-      if (subBench.length){
-        var subLbl = document.createElement('div');
-        subLbl.className = 'rot-menu-label';
-        subLbl.style.marginTop = '8px';
-        subLbl.textContent = 'Quick pick';
-        subExpand.appendChild(subLbl);
-        appendPlayerChips(subExpand, subBench, null, function(subId){
-          applyManualSub(team, baseSlot, subId);
-        });
-      }
-      opts.appendChild(subExpand);
-    }
-
-    // ── 2. Auto-sub (or Libero for MB) ───────────────────────────────────────
+    // ── Auto-sub (or Libero for MB) ─────────────────────────────────────────
     var autoBtn = document.createElement('button');
     autoBtn.type = 'button';
-    autoBtn.className = 'rot-menu-opt-btn' + (_rotMenuExpand === 'autosub' ? ' active' : '');
-    autoBtn.textContent = isMBBaseSlot(baseSlot) ? '2. Libero' : '2. Auto-sub';
+    var autoConfigured = slotHasAutoSubConfigured(team, baseSlot);
+    autoBtn.className = 'rot-menu-opt-btn' + (_rotMenuExpand === 'autosub' ? ' active' : '') + (autoConfigured ? ' configured' : '');
+    autoBtn.textContent = isMBBaseSlot(baseSlot) ? '1. Libero' : '1. Auto-sub';
     autoBtn.addEventListener('click', function(e){
       e.stopPropagation();
-      if (isMBBaseSlot(baseSlot)){
-        _rotMenuExpand = (_rotMenuExpand === 'autosub') ? null : 'autosub';
-        buildRotPlayerMenu(team, baseSlot, anchor);
-        positionRotPlayerMenu(menu, anchor);
-        return;
-      }
-      openRotationSubPicker(team, baseSlot, 'rotationAutoSub', 'autosub');
+      _rotMenuExpand = (_rotMenuExpand === 'autosub') ? null : 'autosub';
+      buildRotPlayerMenu(team, baseSlot, anchor);
+      positionRotPlayerMenu(menu, anchor);
     });
     opts.appendChild(autoBtn);
     if (_rotMenuExpand === 'autosub'){
@@ -4015,14 +4108,13 @@ document.addEventListener('DOMContentLoaded', function(){
       autoExpand.className = 'rot-menu-expand';
       if (isMBBaseSlot(baseSlot)){
         var mbLabel = baseSlot === 3 ? 'MB2' : 'MB1';
-        var libOn = liberoEnabledForMiddle(team, mbLabel);
+        var libOn = getLiberoReplaceBaseSlot(team) === baseSlot && isLiberoReplaceConfigured(team);
         var libRow = document.createElement('div');
         libRow.className = 'rot-menu-row';
         libRow.appendChild(document.createTextNode('Libero replaces back row'));
         libRow.appendChild(makeMenuToggle(libOn, function(on){
-          if (baseSlot === 3) team.rotation.liberoForMB2 = on;
-          else team.rotation.liberoForMB1 = on;
-          if (!on && team.rotation.liberoActive && team.rotation.liberoSlot === mbLabel){
+          setLiberoReplaceBaseSlot(team, baseSlot, on);
+          if (!on && team.rotation.liberoActive && team.rotation.liberoReplacesBaseSlot === baseSlot){
             deactivateLibero(team);
           }
           applyRulesForOffset(team, team.rotation.offset || 0);
@@ -4070,6 +4162,7 @@ document.addEventListener('DOMContentLoaded', function(){
             saveState();
             buildRotPlayerMenu(team, baseSlot, anchor);
             positionRotPlayerMenu(menu, anchor);
+            renderRotationWheel();
           });
         }
         if (hasSub){
@@ -4088,6 +4181,7 @@ document.addEventListener('DOMContentLoaded', function(){
             saveState();
             buildRotPlayerMenu(team, baseSlot, anchor);
             positionRotPlayerMenu(menu, anchor);
+            renderRotationWheel();
           });
           clearRow.appendChild(clearBtn);
           autoExpand.appendChild(clearRow);
@@ -4098,30 +4192,49 @@ document.addEventListener('DOMContentLoaded', function(){
 
     menu.appendChild(opts);
 
-    // ── 3. Serving (always visible) ──────────────────────────────────────────
+    // ── Serving ──────────────────────────────────────────────────────────────
     var serveSec = document.createElement('div');
     serveSec.className = 'rot-menu-section';
     var serveLbl = document.createElement('div');
     serveLbl.className = 'rot-menu-label';
-    serveLbl.textContent = '3. Serving';
+    serveLbl.textContent = '2. Serving';
     serveSec.appendChild(serveLbl);
 
     if (isMBBaseSlot(baseSlot)){
       var mbLabel2 = baseSlot === 3 ? 'MB2' : 'MB1';
-      var mb2Serves = team.rotation.liberoMB2 !== false;
-      var iServe = (mbLabel2 === 'MB2') ? mb2Serves : !mb2Serves;
+      var iServe = getLiberoServeForBaseSlot(team) === baseSlot && team.rotation.liberoOriginalServesAtPos1 !== false;
       var serveRow = document.createElement('div');
       serveRow.className = 'rot-menu-row';
       serveRow.appendChild(document.createTextNode('I will serve'));
       serveRow.appendChild(makeMenuToggle(iServe, function(on){
-        if (on) team.rotation.liberoMB2 = (mbLabel2 === 'MB2');
-        else team.rotation.liberoMB2 = (mbLabel2 !== 'MB2');
+        team.rotation.liberoServeForBaseSlot = baseSlot;
+        team.rotation.liberoOriginalServesAtPos1 = on;
+        syncLegacyLiberoFlags(team);
         applyRulesForOffset(team, team.rotation.offset || 0);
         saveState();
         renderRotationWheel();
         refreshMenu();
       }));
       serveSec.appendChild(serveRow);
+    } else if (getLiberoReplaceBaseSlot(team) === baseSlot && isLiberoReplaceConfigured(team)){
+      var libServe = getLiberoServeForBaseSlot(team) === baseSlot && team.rotation.liberoOriginalServesAtPos1 !== false;
+      var libServeRow = document.createElement('div');
+      libServeRow.className = 'rot-menu-row';
+      libServeRow.appendChild(document.createTextNode('I will serve'));
+      libServeRow.appendChild(makeMenuToggle(libServe, function(on){
+        team.rotation.liberoServeForBaseSlot = baseSlot;
+        team.rotation.liberoOriginalServesAtPos1 = on;
+        syncLegacyLiberoFlags(team);
+        applyRulesForOffset(team, team.rotation.offset || 0);
+        saveState();
+        renderRotationWheel();
+        refreshMenu();
+      }));
+      serveSec.appendChild(libServeRow);
+      var libServeNote = document.createElement('div');
+      libServeNote.className = 'rot-menu-expand-hint';
+      libServeNote.textContent = 'When this player is at pos 1, turn on if they serve instead of the libero.';
+      serveSec.appendChild(libServeNote);
     } else if (isSubRuleSlot(baseSlot)){
       var subInPos = (team.rotation.autoSubPos && team.rotation.autoSubPos[baseSlot]) || 1;
       var subServes = subInPos === 1;
@@ -4220,21 +4333,10 @@ document.addEventListener('DOMContentLoaded', function(){
     if (rotNumLabel) rotNumLabel.textContent = 'Rot ' + ((team.rotation.offset || 0) + 1);
 
     // ── SR mode setup ─────────────────────────────────────────────────────────
-    var srOn = team.rotation.srMode && !team.rotation.hasBall;
-    var srBtn = document.getElementById('rotationSRBtn');
+    var srOn = team.rotation.hasBall === false;
     var srSystemToggle = document.getElementById('srSystemToggle');
-    if (srBtn){
-      var serving = team.rotation.hasBall !== false;
-      srBtn.disabled = serving;
-      srBtn.style.background  = (!serving && team.rotation.srMode) ? '#2563eb' : '';
-      srBtn.style.color       = (!serving && team.rotation.srMode) ? '#fff' : '';
-      srBtn.style.borderColor = (!serving && team.rotation.srMode) ? '#1d4ed8' : '';
-      srBtn.style.opacity     = serving ? '0.4' : '1';
-      srBtn.textContent = (!serving && team.rotation.srMode) ? 'SRV RCV ✓' : 'SRV RCV';
-      srBtn.title = serving ? 'Switch to Receiving first' : 'Toggle serve receive stacking view';
-    }
     if (srSystemToggle){
-      srSystemToggle.style.display = team.rotation.srMode ? 'flex' : 'none';
+      srSystemToggle.style.display = srOn ? 'flex' : 'none';
       var btn51 = document.getElementById('srBtn51');
       var btn62 = document.getElementById('srBtn62');
       if (btn51){ btn51.style.background = team.rotation.srSystem === '5-1' ? '#1e3a8a' : '#f3f4f6'; btn51.style.color = team.rotation.srSystem === '5-1' ? '#fff' : '#374151'; }
@@ -4269,14 +4371,15 @@ document.addEventListener('DOMContentLoaded', function(){
       var isServer = (pos === 1) && !srOn;
       var isLibActive = team.rotation.liberoActive && libId && libTargetPos === pos;
       var isSubIn = !!subBaseLabel;
-      var hasRules = baseSlot && slotHasRules(team, baseSlot);
+      var hasAutoSub = baseSlot && slotHasAutoSubConfigured(team, baseSlot);
+      var autoSubPlayer = hasAutoSub ? getAutoSubPlayer(team, baseSlot) : null;
 
       var wrap = document.createElement('div');
       wrap.className = 'rot-circle-wrap' +
         (isServer ? ' is-server' : '') +
         (isLibActive ? ' is-libero' : '') +
         (isSubIn ? ' is-sub-in' : '') +
-        (hasRules ? ' has-rules' : '') +
+        (hasAutoSub ? ' has-auto-sub' : '') +
         (!pid ? ' is-empty' : '');
       wrap.setAttribute('data-rotpos', pos);
       if (baseSlot) wrap.setAttribute('data-base-slot', baseSlot);
@@ -4314,6 +4417,20 @@ document.addEventListener('DOMContentLoaded', function(){
       wrap.appendChild(ball);
       wrap.appendChild(buildPlayerNameLine(name, subBaseLabel));
 
+      if (autoSubPlayer){
+        var autoBadge = document.createElement('div');
+        autoBadge.className = 'rot-auto-sub-badge';
+        autoBadge.textContent = '↔ #' + (autoSubPlayer.number || '?') + ' ' + firstName(autoSubPlayer.name);
+        autoBadge.title = 'Auto-sub: ' + autoSubPlayer.name;
+        wrap.appendChild(autoBadge);
+      } else if (hasAutoSub && baseSlot && isLiberoReplaceConfigured(team) && getLiberoReplaceBaseSlot(team) === baseSlot){
+        var libBadge = document.createElement('div');
+        libBadge.className = 'rot-auto-sub-badge';
+        libBadge.textContent = '↔ Libero';
+        libBadge.title = 'Libero replaces this player in back row';
+        wrap.appendChild(libBadge);
+      }
+
       var posNumEl = document.createElement('div');
       posNumEl.className = 'rot-circle-posnum';
       posNumEl.textContent = 'Pos ' + pos + (isServer ? ' ● serve' : '');
@@ -4331,7 +4448,7 @@ document.addEventListener('DOMContentLoaded', function(){
           closeRotPlayerMenu();
           return;
         }
-        _rotMenuExpand = null;
+        _rotMenuExpand = 'autosub';
         openRotPlayerMenu(wrap, pos);
       });
 
@@ -4549,6 +4666,7 @@ document.addEventListener('DOMContentLoaded', function(){
     updateSubCountDisplay(team);
     updateLiberoBtn(team);
     syncLiberoSelect(team);
+    syncLiberoRulesUI(team);
     if (reopenSlot){
       _rotMenuBaseSlot = reopenSlot;
       _rotMenuExpand = reopenExpand;
@@ -4630,24 +4748,41 @@ document.addEventListener('DOMContentLoaded', function(){
     if (!team) return;
     ensureRotation(team);
     team.rotation.hasBall = !team.rotation.hasBall;
-    if (!team.rotation.hasBall){
-      team.rotation.srMode = true;
-    } else {
-      team.rotation.srMode = false;
+    team.rotation.srMode = !team.rotation.hasBall;
+    if (team.rotation.hasBall){
       autoSelectServer();
     }
     saveState();
     renderRotationWheel();
   });
 
-  // SRV RCV button — toggle serve receive stacking overlay
-  var rotationSRBtn = byId('rotationSRBtn');
-  if (rotationSRBtn) rotationSRBtn.addEventListener('click', function(){
+  var liberoReplaceSelect = byId('liberoReplaceSelect');
+  if (liberoReplaceSelect) liberoReplaceSelect.addEventListener('change', function(){
     var team = activeTeam();
     if (!team) return;
-    ensureRotation(team);
-    if (team.rotation.hasBall) return; // can't enter SR mode while serving
-    team.rotation.srMode = !team.rotation.srMode;
+    if (liberoReplaceSelect.value === 'off') setLiberoReplaceBaseSlot(team, null, false);
+    else setLiberoReplaceBaseSlot(team, parseInt(liberoReplaceSelect.value, 10), true);
+    applyRulesForOffset(team, team.rotation.offset || 0);
+    saveState();
+    renderRotationWheel();
+  });
+  var liberoServeForSelect = byId('liberoServeForSelect');
+  if (liberoServeForSelect) liberoServeForSelect.addEventListener('change', function(){
+    var team = activeTeam();
+    if (!team) return;
+    if (liberoServeForSelect.value === 'off') return;
+    team.rotation.liberoServeForBaseSlot = parseInt(liberoServeForSelect.value, 10);
+    syncLegacyLiberoFlags(team);
+    applyRulesForOffset(team, team.rotation.offset || 0);
+    saveState();
+    renderRotationWheel();
+  });
+  var liberoOriginalServesCheck = byId('liberoOriginalServesCheck');
+  if (liberoOriginalServesCheck) liberoOriginalServesCheck.addEventListener('change', function(){
+    var team = activeTeam();
+    if (!team) return;
+    team.rotation.liberoOriginalServesAtPos1 = liberoOriginalServesCheck.checked;
+    applyRulesForOffset(team, team.rotation.offset || 0);
     saveState();
     renderRotationWheel();
   });
