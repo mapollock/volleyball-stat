@@ -10,7 +10,7 @@
  *   Manual +our score also triggers rotation when we didn't have the ball.
  */
 
-var APP_VERSION = '0.1.164';
+var APP_VERSION = '0.1.165';
 console.log('[VolleyStat] v' + APP_VERSION + ' loaded');
 
 var STORAGE_KEY = 'volleystat_v1'; // stable key — do not change between versions
@@ -571,6 +571,30 @@ function cycleLiberoSlot(team, matchKey, slotIndex){
 
 function scoreKeyFor(day, match, set){
   return day + ' - ' + match + ' - Set ' + set;
+}
+
+function parseMatchKey(matchKey){
+  if (!matchKey) return { day: 'Day 1', match: 'Match 1' };
+  var sep = ' - ';
+  var idx = matchKey.indexOf(sep);
+  if (idx < 0) return { day: 'Day 1', match: matchKey };
+  return { day: matchKey.slice(0, idx), match: matchKey.slice(idx + sep.length) };
+}
+
+function clearSetStats(team, matchKey, setNum){
+  if (!team) return;
+  if (!team.data) team.data = {};
+  if (!team.data[matchKey]) team.data[matchKey] = {};
+  var setKey = String(setNum);
+  if (!team.data[matchKey][setKey]) team.data[matchKey][setKey] = {};
+  var players = team.players || [];
+  for (var i = 0; i < players.length; i++){
+    team.data[matchKey][setKey][players[i].id] = emptyCounters();
+  }
+  ensureSetLineups(team);
+  if (team.setLineups && team.setLineups[matchKey]) delete team.setLineups[matchKey][setKey];
+  var parts = parseMatchKey(matchKey);
+  scoreStore[scoreKeyFor(parts.day, parts.match, setNum)] = { our: 0, opp: 0 };
 }
 
 function scoreKeyFromHistoryEntry(entry){
@@ -2164,6 +2188,11 @@ document.addEventListener('DOMContentLoaded', function(){
       if (resetConfirmTeam) resetConfirmTeam.textContent = opts.teamName;
       if (resetConfirmScope) resetConfirmScope.textContent = opts.scope;
       if (resetConfirmRotation) resetConfirmRotation.textContent = opts.rotation;
+      var resetConfirmView = byId('resetConfirmView');
+      if (resetConfirmView) resetConfirmView.textContent = opts.viewContext || '';
+      if (resetConfirmOk) resetConfirmOk.textContent = opts.saveLabel || 'Save & Reset';
+      if (resetConfirmNoSave) resetConfirmNoSave.textContent = opts.noSaveLabel || "Don't Save & Reset";
+      if (resetConfirmExport) resetConfirmExport.textContent = opts.exportLabel || 'Export CSV';
       showModal(resetConfirmBackdrop);
       setTimeout(function(){ if (resetConfirmOk) resetConfirmOk.focus(); }, 0);
     });
@@ -5534,14 +5563,117 @@ document.addEventListener('DOMContentLoaded', function(){
     enterSetBaseMode();
   };
 
+  function historyEntryInResetScope(entry, view, matchKey, setNum){
+    if (!entry) return false;
+    if (view === 'set') return entry.match === matchKey && String(entry.set) === String(setNum);
+    if (view === 'match') return entry.match === matchKey;
+    return true;
+  }
+
+  function filterHistoryForResetScope(team, view, matchKey, setNum){
+    if (!team || !team.history) return;
+    team.history = team.history.filter(function(entry){
+      return !historyEntryInResetScope(entry, view, matchKey, setNum);
+    });
+  }
+
+  function eachResetTarget(team, view, fn){
+    var matchKey = getMatchKey();
+    var setNum = setSelect ? (setSelect.value || '1') : '1';
+    var maxSets = maxSetsForTeamData();
+    if (view === 'set'){
+      fn(matchKey, setNum);
+      return;
+    }
+    if (view === 'match'){
+      for (var s = 1; s <= maxSets; s++) fn(matchKey, String(s));
+      return;
+    }
+    for (var nd = 0; nd < DEFAULT_DAYS.length; nd++){
+      for (var mi = 0; mi < (team.matches || DEFAULT_MATCHES).length; mi++){
+        var mk = DEFAULT_DAYS[nd] + ' - ' + team.matches[mi];
+        for (var ss = 1; ss <= maxSets; ss++) fn(mk, String(ss));
+      }
+    }
+  }
+
+  function clearStatsForCurrentView(team, view){
+    var matchKey = getMatchKey();
+    var setNum = setSelect ? (setSelect.value || '1') : '1';
+    eachResetTarget(team, view, function(mk, sn){
+      clearSetStats(team, mk, sn);
+    });
+    filterHistoryForResetScope(team, view, matchKey, setNum);
+    if (view === 'tournament'){
+      team.setLineups = {};
+    } else if (view === 'match' && team.setLineups){
+      delete team.setLineups[matchKey];
+    }
+  }
+
+  function resetRotationForView(team, view){
+    ensureRotation(team);
+    team.rotation.offset = 0;
+    team.rotation.hasBall = true;
+    team.rotation.liberoActive = false;
+    team.rotation.liberoId = null;
+    team.rotation.liberoSlot = null;
+    team.rotation.liberoCourtPos = null;
+    team.rotation.srMode = false;
+    team.rotation.subCount = 0;
+    team.rotation.manualSubPairs = {};
+    team.rotation.autoSubOriginals = {};
+    team.rotation.autoSubs = {};
+    team.rotation.autoSubPos = {};
+    if (team.savedBase) team.rotation.base = JSON.parse(JSON.stringify(team.savedBase));
+    if (view === 'set' || view === 'match'){
+      applySetStart(team, getMatchKey(), setSelect ? setSelect.value : '1');
+      applyLiberoForCurrentMatch(team);
+    }
+    enforceServingReceiveMode(team);
+  }
+
+  function getResetModalCopy(view){
+    var viewLabel = getViewLabel();
+    var contextLabel = getExportContextLabel();
+    var scope;
+    var rotation;
+    if (view === 'set'){
+      scope = 'Clears player stats, score, lineups, and undo history for ' + contextLabel + ' only. Other sets and matches are kept.';
+      rotation = 'Rotation for this set restarts at Rot 1 (saved Set Base lineup kept).';
+    } else if (view === 'match'){
+      scope = 'Clears all sets in ' + contextLabel + ' (stats, scores, lineups, undo history). Other matches and days are kept.';
+      rotation = 'Rotation restarts at Rot 1 for the current set (saved Set Base lineup kept).';
+    } else {
+      scope = 'Clears all tournament stats for this team — every day, match, and set — plus all scores and undo history.';
+      rotation = 'Rotation resets to Rot 1 (offset 0). Serving. Libero deactivated.';
+    }
+    return {
+      viewLabel: viewLabel,
+      contextLabel: contextLabel,
+      scope: scope,
+      rotation: rotation,
+      saveLabel: 'Save ' + viewLabel + ' & Reset',
+      noSaveLabel: "Don't Save " + viewLabel + ' & Reset',
+      exportLabel: 'Export ' + viewLabel
+    };
+  }
+
   window._vsReset = async function(){
     var team = activeTeam();
     if (!team) return;
 
+    var view = viewSelect ? (viewSelect.value || 'set') : 'set';
+    var copy = getResetModalCopy(view);
+
     var choice = await openResetConfirmModal({
       teamName: team.name || 'Team',
-      scope: 'Stats archived to Firebase then cleared. Team, roster and rotation assignments kept.',
-      rotation: 'Rotation resets to Rotation 1 (offset 0). Serving. Libero deactivated.'
+      viewContext: copy.viewLabel + ' · ' + copy.contextLabel,
+      scope: copy.scope,
+      rotation: copy.rotation,
+      saveLabel: copy.saveLabel,
+      noSaveLabel: copy.noSaveLabel,
+      exportLabel: copy.exportLabel
     });
 
     if (choice === 'export'){
@@ -5552,52 +5684,41 @@ document.addEventListener('DOMContentLoaded', function(){
 
     var skipSave = (choice === 'nosave');
 
-    // Read custom session name from dialog input
     var sessionNameEl = byId('resetSessionName');
     var customSessionName = sessionNameEl ? sessionNameEl.value.trim() : '';
     if (sessionNameEl) sessionNameEl.value = '';
 
-    // Archive before wiping unless user chose Don't Save
-    if (!skipSave && window._firebaseArchive) {
+    if (!skipSave && window._firebaseArchive){
       var now = new Date();
-      var autoLabel = (team.name || 'Team') + ' · '
+      var autoLabel = (team.name || 'Team') + ' · ' + copy.viewLabel + ' · ' + copy.contextLabel + ' · '
         + now.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
         + ' · ' + now.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true });
       var label = customSessionName || autoLabel;
       window._firebaseArchive(state, label).catch(function(e){ console.warn('[VolleyStat] Archive failed:', e.message); });
     }
 
-    team.data = buildEmptyData(team.players || [], team.matches && team.matches.length ? team.matches : DEFAULT_MATCHES);
-    team.history = [];
+    clearStatsForCurrentView(team, view);
+    if (view === 'tournament') scoreStore = {};
 
-    ensureRotation(team);
-    team.rotation.offset = 0;
-    team.rotation.hasBall = true;
-    team.rotation.liberoActive = false;
-    team.rotation.liberoSlot = null;
-    team.rotation.liberoCourtPos = null;
-    team.rotation.srMode = false;
-    team.rotation.subCount = 0;
-    team.rotation.autoSubOriginals = {};
-    // Restore saved base lineup if one exists
-    if (team.savedBase) team.rotation.base = JSON.parse(JSON.stringify(team.savedBase));
+    resetRotationForView(team, view);
 
-    scoreStore = {};
     saveScore();
     saveState();
 
-    if (!skipSave && window._firebaseRegisterSession && team.name) {
-      window._firebaseRegisterSession(customSessionName || (team.name + ' (new set)'));
+    if (!skipSave && window._firebaseRegisterSession && team.name){
+      window._firebaseRegisterSession(customSessionName || (team.name + ' · reset ' + copy.contextLabel));
     }
 
     renderTable();
     updateOnboardingAndControls();
     renderRotationStrip();
     autoSelectServer();
+    refreshLastActionFromHistory(team);
     if (exportName) exportName.dataset.userEdited = '';
     syncExportNameDefault();
     populateMobilePlayerSelect();
     renderScore();
+    renderUnifiedCourt();
   };
 
   if (resetBtn) resetBtn.addEventListener('click', window._vsReset)

@@ -1031,26 +1031,27 @@
   <div id="resetConfirmBackdrop" class="modal-backdrop hidden modal-backdrop-el" style="display:none" role="dialog" aria-modal="true" aria-labelledby="resetConfirmTitle">
     <div class="modal">
       <div class="modal-header">
-        <div class="modal-title" id="resetConfirmTitle">Confirm Reset</div>
+        <div class="modal-title" id="resetConfirmTitle">Reset Stats</div>
         <button id="resetConfirmClose" type="button" class="icon-btn" aria-label="Close">✕</button>
       </div>
       <div class="modal-body">
         <div class="confirm-grid">
           <div class="confirm-row"><div class="confirm-label">Team</div><div id="resetConfirmTeam" class="confirm-value"></div></div>
+          <div class="confirm-row"><div class="confirm-label">View</div><div id="resetConfirmView" class="confirm-value"></div></div>
           <div class="confirm-row"><div class="confirm-label">What resets</div><div id="resetConfirmScope" class="confirm-value"></div></div>
           <div class="confirm-row"><div class="confirm-label">Rotation</div><div id="resetConfirmRotation" class="confirm-value"></div></div>
         </div>
         <div style="margin-top:12px;">
-          <label style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;font-weight:700;display:block;margin-bottom:5px;">Save session as (optional)</label>
+          <label style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;font-weight:700;display:block;margin-bottom:5px;">Archive label (optional)</label>
           <input id="resetSessionName" type="text" placeholder="e.g. Finals Day 2 vs Rivals" style="width:100%;border:1px solid #e5e7eb;border-radius:10px;padding:10px;font-size:14px;font-weight:700;background:#fff;" />
-          <div style="font-size:11px;color:#9ca3af;margin-top:4px;">Leave blank to skip saving. Export CSV below to download a copy.</div>
+          <div style="font-size:11px;color:#9ca3af;margin-top:4px;">Used when you choose Save. Leave blank for an auto-generated name.</div>
         </div>
       </div>
       <div class="modal-footer" style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
-        <button id="resetConfirmExport" type="button" class="btn secondary">Export CSV</button>
+        <button id="resetConfirmExport" type="button" class="btn secondary">Export Current View</button>
         <button id="resetConfirmCancel" type="button" class="btn secondary">Cancel</button>
-        <button id="resetConfirmNoSave" type="button" class="btn secondary" style="color:#dc2626;border-color:#fca5a5;" title="Reset without saving to database">Don't Save</button>
-        <button id="resetConfirmOk" type="button" class="btn danger">Save &amp; Reset</button>
+        <button id="resetConfirmNoSave" type="button" class="btn secondary" style="color:#dc2626;border-color:#fca5a5;" title="Reset without saving to database">Don't Save Current View</button>
+        <button id="resetConfirmOk" type="button" class="btn danger">Save Current View</button>
       </div>
     </div>
   </div>
@@ -1108,6 +1109,6 @@
       document.getElementById('loginError').classList.remove('visible');
     }
   </script>
-  <script type="module" src="app.js?v=0.1.164"></script>
+  <script type="module" src="app.js?v=0.1.165"></script>
 </body>
 </html>
