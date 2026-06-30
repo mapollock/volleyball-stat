@@ -10,7 +10,7 @@
  *   Manual +our score also triggers rotation when we didn't have the ball.
  */
 
-var APP_VERSION = '0.1.162';
+var APP_VERSION = '0.1.163';
 console.log('[VolleyStat] v' + APP_VERSION + ' loaded');
 
 var STORAGE_KEY = 'volleystat_v1'; // stable key — do not change between versions
@@ -239,11 +239,11 @@ function ensureRotation(team){
   if (!team.rotation.autoSubPos) team.rotation.autoSubPos = {}; // per slot: 1=sub at pos1, 6=sub at pos6
   if (!team.rotation.autoSubOriginals) team.rotation.autoSubOriginals = {};
   if (!team.rotation.manualSubPairs) team.rotation.manualSubPairs = {};
-  // Starter in base slot is not a sub — drop stale manual-sub pairs
+  // Drop manual-sub pair only when the original starter is back in this base slot
   for (var msKey in team.rotation.manualSubPairs){
     var msSlot = parseInt(msKey, 10);
     var msPair = team.rotation.manualSubPairs[msKey];
-    if (!msPair || msPair.in === team.rotation.base[msSlot]){
+    if (!msPair || playerIdKey(msPair.out) === playerIdKey(team.rotation.base[msSlot])){
       delete team.rotation.manualSubPairs[msKey];
     }
   }
@@ -972,11 +972,22 @@ function deactivateLibero(team){
 }
 function getLineupBaseForReplay(team){
   ensureRotation(team);
-  if (team.savedBase) return JSON.parse(JSON.stringify(team.savedBase));
-  var base = JSON.parse(JSON.stringify(team.rotation.base));
-  if (team.rotation.autoSubOriginals){
-    for (var slot in team.rotation.autoSubOriginals){
-      if (team.rotation.autoSubOriginals[slot]) base[slot] = team.rotation.autoSubOriginals[slot];
+  var base;
+  if (team.savedBase) {
+    base = JSON.parse(JSON.stringify(team.savedBase));
+  } else {
+    base = JSON.parse(JSON.stringify(team.rotation.base));
+    if (team.rotation.autoSubOriginals){
+      for (var slot in team.rotation.autoSubOriginals){
+        if (team.rotation.autoSubOriginals[slot]) base[slot] = team.rotation.autoSubOriginals[slot];
+      }
+    }
+  }
+  // Manual subs stay in the lineup until the original is put back in
+  if (team.rotation.manualSubPairs){
+    for (var msKey in team.rotation.manualSubPairs){
+      var pair = team.rotation.manualSubPairs[msKey];
+      if (pair && pair.in) base[msKey] = pair.in;
     }
   }
   return base;
@@ -1028,14 +1039,17 @@ function applyRulesForOffset(team, offset){
   }
 }
 
-// Replay from saved base through each rotation so forward/back stay in sync with libero + auto-subs.
+// Replay from lineup through each rotation step (libero + auto-subs). Manual subs persist in base.
 function syncRotationToOffset(team, targetOffset){
   ensureRotation(team);
   targetOffset = ((targetOffset % 6) + 6) % 6;
+  var preservedPairs = team.rotation.manualSubPairs
+    ? JSON.parse(JSON.stringify(team.rotation.manualSubPairs)) : {};
+  var preservedSubCount = team.rotation.subCount || 0;
   team.rotation.base = getLineupBaseForReplay(team);
-  team.rotation.subCount = 0;
+  team.rotation.manualSubPairs = preservedPairs;
   team.rotation.autoSubOriginals = {};
-  team.rotation.manualSubPairs = {};
+  team.rotation.subCount = 0;
   deactivateLibero(team);
 
   for (var off = 0; off <= targetOffset; off++){
@@ -1043,18 +1057,24 @@ function syncRotationToOffset(team, targetOffset){
     applyRulesForOffset(team, off);
   }
   team.rotation.offset = targetOffset;
+  // Re-apply manual subs after auto-sub replay (auto-subs must not override them)
+  for (var msKey in preservedPairs){
+    var pair = preservedPairs[msKey];
+    if (pair && pair.in) team.rotation.base[msKey] = pair.in;
+  }
+  team.rotation.subCount = preservedSubCount;
 }
 
 function advanceRotation(team){
   ensureRotation(team);
-  var cur = team.rotation.offset || 0;
-  syncRotationToOffset(team, (cur + 1) % 6);
+  team.rotation.offset = ((team.rotation.offset || 0) + 1) % 6;
+  applyRulesForOffset(team, team.rotation.offset);
 }
 
 function retreatRotation(team){
   ensureRotation(team);
-  var cur = team.rotation.offset || 0;
-  syncRotationToOffset(team, (cur - 1 + 6) % 6);
+  team.rotation.offset = ((team.rotation.offset || 0) - 1 + 6) % 6;
+  applyRulesForOffset(team, team.rotation.offset);
 }
 
 // Utilities
@@ -3569,7 +3589,12 @@ document.addEventListener('DOMContentLoaded', function(){
     var outId = team.rotation.base[baseSlot];
     team.rotation.base[baseSlot] = subId;
     if (!team.rotation.manualSubPairs) team.rotation.manualSubPairs = {};
-    team.rotation.manualSubPairs[baseSlot] = { in: subId, out: outId };
+    var existingPair = team.rotation.manualSubPairs[baseSlot];
+    if (existingPair && playerIdKey(subId) === playerIdKey(existingPair.out)){
+      delete team.rotation.manualSubPairs[baseSlot];
+    } else {
+      team.rotation.manualSubPairs[baseSlot] = { in: subId, out: outId };
+    }
     if (shouldCountSubstitution(team, subId, outId, baseSlot)){
       team.rotation.subCount = (team.rotation.subCount || 0) + 1;
     }
