@@ -10,7 +10,7 @@
  *   Manual +our score also triggers rotation when we didn't have the ball.
  */
 
-var APP_VERSION = '0.1.176';
+var APP_VERSION = '0.1.179';
 console.log('[VolleyStat] v' + APP_VERSION + ' loaded');
 
 var STORAGE_KEY = 'volleystat_v1'; // stable key — do not change between versions
@@ -1071,6 +1071,7 @@ function syncLiberoSlotFromCourtPos(team, courtPos){
 function shouldSkipLiberoAtPos1(team, baseSlot, courtPos, force){
   if (force || courtPos !== 1) return false;
   if (rotatedPos(baseSlot, team.rotation.offset || 0) !== 1) return false;
+  if (getLiberoServeForBaseSlot(team) !== baseSlot) return false;
   return team.rotation.liberoOriginalServesAtPos1 !== false;
 }
 
@@ -3800,7 +3801,7 @@ document.addEventListener('DOMContentLoaded', function(){
       if (panel) panel.classList.remove('open');
       if (coachCtrls) coachCtrls.style.display = 'flex';
       if (setBaseActs) setBaseActs.style.display = 'none';
-      if (hint) hint.textContent = 'Double-tap a player for Auto-sub · Serving';
+      if (hint) hint.textContent = 'Double-tap for Auto-sub · Serving (libero rules above)';
       if (subCount) subCount.style.display = '';
       if (doneBtn) doneBtn.style.display = '';
     }
@@ -4244,47 +4245,30 @@ document.addEventListener('DOMContentLoaded', function(){
 
     if (opts.childNodes.length) menu.appendChild(opts);
 
-    // ── Serving ──────────────────────────────────────────────────────────────
-    var hasServeSection = isLiberoReplaceSlot(team, baseSlot) || hasAutoSubSection;
-    if (!hasServeSection){
-      var emptyHint = document.createElement('div');
-      emptyHint.className = 'rot-menu-expand-hint';
-      emptyHint.style.marginTop = '4px';
-      emptyHint.textContent = 'Use Libero replaces chips above to include this player.';
-      menu.appendChild(emptyHint);
-    } else {
+    function formatServesLabel(playerId, fallback){
+      if (!playerId) return fallback || 'Serves';
+      var label = formatPlayerLabel(team, playerId);
+      if (!label || label === '—') return fallback || 'Serves';
+      return label + ' serves';
+    }
+
+    // ── Serving (auto-sub only — libero replace/serve is set in the row above) ──
+    if (hasAutoSubSection){
     var serveSec = document.createElement('div');
     serveSec.className = 'rot-menu-section';
     var serveLbl = document.createElement('div');
     serveLbl.className = 'rot-menu-label';
-    serveLbl.textContent = (hasAutoSubSection ? '2. ' : '1. ') + 'Serving';
+    serveLbl.textContent = '2. Serving';
     serveSec.appendChild(serveLbl);
 
-    if (isLiberoReplaceSlot(team, baseSlot)){
-      var iServe = getLiberoServeForBaseSlot(team) === baseSlot && team.rotation.liberoOriginalServesAtPos1 !== false;
-      var serveRow = document.createElement('div');
-      serveRow.className = 'rot-menu-row';
-      serveRow.appendChild(document.createTextNode('I will serve'));
-      serveRow.appendChild(makeMenuToggle(iServe, function(on){
-        team.rotation.liberoServeForBaseSlot = baseSlot;
-        team.rotation.liberoOriginalServesAtPos1 = on;
-        syncLegacyLiberoFlags(team);
-        applyRulesForOffset(team, team.rotation.offset || 0);
-        saveState();
-        renderRotationWheel();
-        refreshMenu();
-      }));
-      serveSec.appendChild(serveRow);
-      var serveNote = document.createElement('div');
-      serveNote.className = 'rot-menu-expand-hint';
-      serveNote.textContent = 'At pos 1, turn on if this player serves instead of the libero.';
-      serveSec.appendChild(serveNote);
-    } else if (hasAutoSubSection){
+      var subId = (team.rotation.autoSubs || {})[baseSlot] || null;
       var subInPos = (team.rotation.autoSubPos && team.rotation.autoSubPos[baseSlot]) || 1;
       var subServes = subInPos === 1;
       var serveRow2 = document.createElement('div');
       serveRow2.className = 'rot-menu-row';
-      serveRow2.appendChild(document.createTextNode(subServes ? 'Sub serves' : 'Original serves'));
+      serveRow2.appendChild(document.createTextNode(
+        subServes ? formatServesLabel(subId, 'Sub serves') : formatServesLabel(occupantId, 'Original serves')
+      ));
       serveRow2.appendChild(makeMenuToggle(subServes, function(on){
         clearActiveAutoSub(team, baseSlot);
         if (!team.rotation.autoSubPos) team.rotation.autoSubPos = {};
@@ -4297,11 +4281,16 @@ document.addEventListener('DOMContentLoaded', function(){
       var serveNote = document.createElement('div');
       serveNote.className = 'rot-menu-expand-hint';
       serveNote.textContent = subServes
-        ? 'Sub enters at Pos 1 to serve.'
-        : 'Original serves — sub enters at Pos 6.';
+        ? ((subId ? formatPlayerLabel(team, subId) : 'Sub') + ' enters at pos 1.')
+        : (formatPlayerLabel(team, occupantId) + ' serves — sub enters at pos 6.');
       serveSec.appendChild(serveNote);
-    }
     menu.appendChild(serveSec);
+    } else if (isLiberoReplaceSlot(team, baseSlot)){
+      var libHint = document.createElement('div');
+      libHint.className = 'rot-menu-expand-hint';
+      libHint.style.marginTop = '4px';
+      libHint.textContent = 'Libero replace and serving are set above (Libero replaces / Serves for).';
+      menu.appendChild(libHint);
     }
 
     var actions = document.createElement('div');
@@ -4759,7 +4748,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
   var ucRotForward = byId('ucRotForward');
   var ucRotBack = byId('ucRotBack');
-  if (ucRotForward) ucRotForward.addEventListener('click', function(){
+  if (ucRotBack) ucRotBack.addEventListener('click', function(){
     var team = activeTeam();
     if (!team) return;
     advanceRotation(team);
@@ -4768,7 +4757,7 @@ document.addEventListener('DOMContentLoaded', function(){
     renderRotationStrip();
     if (rotationBackdrop && rotationBackdrop.style.display !== 'none') renderRotationWheel();
   });
-  if (ucRotBack) ucRotBack.addEventListener('click', function(){
+  if (ucRotForward) ucRotForward.addEventListener('click', function(){
     var team = activeTeam();
     if (!team) return;
     retreatRotation(team);
