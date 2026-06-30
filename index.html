@@ -91,6 +91,9 @@
     .libero-chip{appearance:none;border:2px solid #000;background:#fde047;color:#422006;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:800;cursor:pointer;touch-action:manipulation;}
     .libero-chip.empty{border-style:dashed;color:#854d0e;background:#fff;}
     .libero-chip.on-court{background:#fde047;color:#422006;border-color:#000;}
+    .libero-replace-chip{appearance:none;border:2px solid #93c5fd;background:#fff;color:#1e3a8a;border-radius:8px;padding:5px 8px;font-size:11px;font-weight:800;cursor:pointer;touch-action:manipulation;white-space:nowrap;}
+    .libero-replace-chip.selected{background:#eff6ff;border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,235,.2);}
+    .libero-replace-chip:active{transform:scale(.97);}
     .rot-menu-actions{margin-top:8px;display:flex;gap:6px;}
     .rot-menu-actions button{flex:1;font-size:11px;font-weight:700;padding:6px 8px;border-radius:6px;border:1px solid #d1d5db;background:#f9fafb;cursor:pointer;}
     .rot-menu-actions button.primary{background:#1e3a8a;color:#fff;border-color:#1e3a8a;}
@@ -961,12 +964,11 @@
           <div id="liberoChips" style="display:flex;gap:6px;flex-wrap:wrap;flex:1;"></div>
         </div>
         <div id="liberoRulesRow" style="display:none;flex-direction:column;gap:8px;margin-bottom:10px;">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <span style="font-size:12px;font-weight:800;color:#374151;white-space:nowrap;">Libero replaces</span>
-            <select id="liberoReplaceSelect" style="flex:1;min-width:160px;border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;font-size:12px;font-weight:700;">
-              <option value="6">MB1</option>
-            </select>
+          <div style="display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;">
+            <span style="font-size:12px;font-weight:800;color:#374151;white-space:nowrap;padding-top:6px;">Libero replaces</span>
+            <div id="liberoReplaceChips" style="display:flex;gap:6px;flex-wrap:wrap;flex:1;"></div>
           </div>
+          <div style="font-size:10px;color:#6b7280;line-height:1.35;margin-top:-4px;">Tap each starter the libero may replace in back row (e.g. both MB1 and MB2).</div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <span style="font-size:12px;font-weight:800;color:#374151;white-space:nowrap;">Serves for</span>
             <select id="liberoServeForSelect" style="flex:1;min-width:160px;border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;font-size:12px;font-weight:700;">
@@ -1138,6 +1140,6 @@
       document.getElementById('loginError').classList.remove('visible');
     }
   </script>
-  <script type="module" src="app.js?v=0.1.174"></script>
+  <script type="module" src="app.js?v=0.1.175"></script>
 </body>
 </html>

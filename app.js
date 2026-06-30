@@ -10,7 +10,7 @@
  *   Manual +our score also triggers rotation when we didn't have the ball.
  */
 
-var APP_VERSION = '0.1.174';
+var APP_VERSION = '0.1.175';
 console.log('[VolleyStat] v' + APP_VERSION + ' loaded');
 
 var STORAGE_KEY = 'volleystat_v1'; // stable key — do not change between versions
@@ -284,6 +284,7 @@ function ensureRotation(team){
   if (team.rotation.liberoForMB2 === undefined) team.rotation.liberoForMB2 = true;
   if (team.rotation.liberoAutoOnRotate === undefined) team.rotation.liberoAutoOnRotate = true;
   migrateLiberoRules(team);
+  normalizeLiberoReplaceSlots(team);
   if (team.rotation.firstBallPending === undefined) team.rotation.firstBallPending = false;
   if (team.rotation.firstBallMode === undefined) team.rotation.firstBallMode = null;
   // Libero must never be tracked as a bench auto-sub
@@ -901,57 +902,93 @@ function restoreRotationOneBase(team){
 
 function mbBaseSlotForLabel(label){ return label === 'MB2' ? 3 : 6; }
 
+var LIBERO_REPLACE_SCAN_ORDER = [3, 6, 1, 2, 4, 5];
+
 function migrateLiberoRules(team){
   if (!team || !team.rotation) return;
   if (team.rotation._liberoRulesMigrated) return;
-  if (team.rotation.liberoReplaceBaseSlot == null){
-    if (team.rotation.liberoForMB2 === false && team.rotation.liberoForMB1 !== false){
-      team.rotation.liberoReplaceBaseSlot = 6;
-    } else if (team.rotation.liberoForMB1 === false && team.rotation.liberoForMB2 !== false){
-      team.rotation.liberoReplaceBaseSlot = 3;
-    } else {
-      team.rotation.liberoReplaceBaseSlot = 6;
-    }
-  }
-  if (team.rotation.liberoReplaceEnabled == null){
-    team.rotation.liberoReplaceEnabled = !(team.rotation.liberoForMB1 === false && team.rotation.liberoForMB2 === false);
-  }
   if (team.rotation.liberoServeForBaseSlot == null){
     team.rotation.liberoServeForBaseSlot = team.rotation.liberoMB2 !== false ? 3 : 6;
   }
   if (team.rotation.liberoOriginalServesAtPos1 == null){
     team.rotation.liberoOriginalServesAtPos1 = true;
   }
+  if (team.rotation.liberoReplaceEnabled == null){
+    team.rotation.liberoReplaceEnabled = !(team.rotation.liberoForMB1 === false && team.rotation.liberoForMB2 === false);
+  }
   team.rotation._liberoRulesMigrated = true;
-  syncLegacyLiberoFlags(team);
+}
+
+function normalizeLiberoReplaceSlots(team){
+  if (!team || !team.rotation) return;
+  if (Array.isArray(team.rotation.liberoReplaceBaseSlots) && team.rotation.liberoReplaceBaseSlots.length){
+    var clean = [];
+    team.rotation.liberoReplaceBaseSlots.forEach(function(s){
+      var n = parseInt(s, 10);
+      if (n >= 1 && n <= 6 && clean.indexOf(n) < 0) clean.push(n);
+    });
+    team.rotation.liberoReplaceBaseSlots = clean;
+    team.rotation.liberoReplaceEnabled = clean.length > 0 && team.rotation.liberoReplaceEnabled !== false;
+    return;
+  }
+  var slots = [];
+  if (team.rotation.liberoForMB1 !== false) slots.push(6);
+  if (team.rotation.liberoForMB2 !== false) slots.push(3);
+  if (!slots.length && team.rotation.liberoReplaceBaseSlot != null){
+    var single = parseInt(team.rotation.liberoReplaceBaseSlot, 10);
+    if (single >= 1 && single <= 6) slots.push(single);
+  }
+  if (!slots.length) slots = [3, 6];
+  team.rotation.liberoReplaceBaseSlots = slots;
+  team.rotation.liberoReplaceEnabled = team.rotation.liberoReplaceEnabled !== false && slots.length > 0;
 }
 
 function syncLegacyLiberoFlags(team){
   if (!team || !team.rotation) return;
-  var slot = getLiberoReplaceBaseSlot(team);
-  var enabled = isLiberoReplaceConfigured(team);
-  team.rotation.liberoForMB1 = enabled && slot === 6;
-  team.rotation.liberoForMB2 = enabled && slot === 3;
+  var slots = team.rotation.liberoReplaceBaseSlots || [];
+  var enabled = team.rotation.liberoReplaceEnabled !== false && slots.length > 0;
+  team.rotation.liberoForMB1 = enabled && slots.indexOf(6) >= 0;
+  team.rotation.liberoForMB2 = enabled && slots.indexOf(3) >= 0;
   team.rotation.liberoMB2 = getLiberoServeForBaseSlot(team) === 3;
 }
 
-function getLiberoReplaceBaseSlot(team){
+function getLiberoReplaceBaseSlots(team){
   ensureRotation(team);
-  var slot = parseInt(team.rotation.liberoReplaceBaseSlot, 10);
-  if (!slot || slot < 1 || slot > 6) slot = 6;
-  return slot;
+  normalizeLiberoReplaceSlots(team);
+  syncLegacyLiberoFlags(team);
+  return (team.rotation.liberoReplaceBaseSlots || []).slice();
+}
+
+function orderedLiberoReplaceSlots(team){
+  var configured = getLiberoReplaceBaseSlots(team);
+  var out = [];
+  LIBERO_REPLACE_SCAN_ORDER.forEach(function(s){
+    if (configured.indexOf(s) >= 0) out.push(s);
+  });
+  configured.forEach(function(s){
+    if (out.indexOf(s) < 0) out.push(s);
+  });
+  return out;
+}
+
+function isLiberoReplaceSlot(team, baseSlot){
+  if (!baseSlot || !isLiberoReplaceConfigured(team)) return false;
+  return getLiberoReplaceBaseSlots(team).indexOf(baseSlot) >= 0;
 }
 
 function getLiberoServeForBaseSlot(team){
   ensureRotation(team);
   var slot = parseInt(team.rotation.liberoServeForBaseSlot, 10);
-  if (!slot || slot < 1 || slot > 6) slot = getLiberoReplaceBaseSlot(team);
+  if (!slot || slot < 1 || slot > 6){
+    var slots = getLiberoReplaceBaseSlots(team);
+    slot = slots.length ? slots[0] : 6;
+  }
   return slot;
 }
 
 function isLiberoReplaceConfigured(team){
   ensureRotation(team);
-  return team.rotation.liberoReplaceEnabled !== false;
+  return team.rotation.liberoReplaceEnabled !== false && getLiberoReplaceBaseSlots(team).length > 0;
 }
 
 function formatLiberoReplaceLabel(team, baseSlot){
@@ -965,14 +1002,24 @@ function formatLiberoReplaceLabel(team, baseSlot){
   return role;
 }
 
-function setLiberoReplaceBaseSlot(team, baseSlot, enabled){
+function formatLiberoReplaceChipLabel(team, baseSlot){
+  var role = BASE_SLOT_LABELS[baseSlot] || ('S' + baseSlot);
+  var pid = (team.rotation.base || {})[baseSlot];
+  var player = pid ? (team.players || []).find(function(p){ return p.id === pid; }) : null;
+  if (player && player.number) return '#' + player.number + ' ' + role;
+  return role;
+}
+
+function toggleLiberoReplaceSlot(team, baseSlot, on){
   ensureRotation(team);
-  if (enabled === false){
-    team.rotation.liberoReplaceEnabled = false;
-  } else {
-    team.rotation.liberoReplaceEnabled = true;
-    team.rotation.liberoReplaceBaseSlot = Math.max(1, Math.min(6, parseInt(baseSlot, 10) || 6));
-  }
+  var slot = Math.max(1, Math.min(6, parseInt(baseSlot, 10) || 0));
+  if (!slot) return;
+  var slots = getLiberoReplaceBaseSlots(team).slice();
+  var idx = slots.indexOf(slot);
+  if (on && idx < 0) slots.push(slot);
+  if (!on && idx >= 0) slots.splice(idx, 1);
+  team.rotation.liberoReplaceBaseSlots = slots;
+  team.rotation.liberoReplaceEnabled = slots.length > 0;
   syncLegacyLiberoFlags(team);
 }
 
@@ -981,11 +1028,15 @@ function findLiberoEligibleCourtPos(team, offset, force){
   ensureRotation(team);
   autoFillBaseFromRoster(team);
   var off = offset !== undefined ? offset : (team.rotation.offset || 0);
-  var baseSlot = getLiberoReplaceBaseSlot(team);
-  var pos = rotatedPos(baseSlot, off);
-  if (!BACK_ROW_POSITIONS[pos]) return null;
-  if (shouldSkipLiberoAtPos1(team, baseSlot, pos, force)) return null;
-  return pos;
+  var slots = orderedLiberoReplaceSlots(team);
+  for (var i=0; i<slots.length; i++){
+    var baseSlot = slots[i];
+    var pos = rotatedPos(baseSlot, off);
+    if (!BACK_ROW_POSITIONS[pos]) continue;
+    if (shouldSkipLiberoAtPos1(team, baseSlot, pos, force)) continue;
+    return pos;
+  }
+  return null;
 }
 
 function isMiddleBackRowPos(courtPos){
@@ -1002,7 +1053,8 @@ function getLiberoCourtPos(team){
     return team.rotation.liberoSlot === 'MB2' ? getMB2CurrentPos(team) : getMB1CurrentPos(team);
   }
   if (isLiberoReplaceConfigured(team)){
-    return rotatedPos(getLiberoReplaceBaseSlot(team), team.rotation.offset || 0);
+    var pos = findLiberoEligibleCourtPos(team);
+    if (pos) return pos;
   }
   return null;
 }
@@ -1026,10 +1078,14 @@ function canLiberoReplaceAtPos(team, courtPos, force){
   if (!courtPos || !BACK_ROW_POSITIONS[courtPos]) return false;
   if (force) return true;
   if (courtPos !== 1) return true;
-  var replaceSlot = getLiberoReplaceBaseSlot(team);
   if (!isLiberoReplaceConfigured(team)) return false;
-  if (rotatedPos(replaceSlot, team.rotation.offset || 0) !== 1) return true;
-  return !shouldSkipLiberoAtPos1(team, replaceSlot, 1, force);
+  var off = team.rotation.offset || 0;
+  var slots = getLiberoReplaceBaseSlots(team);
+  for (var i=0; i<slots.length; i++){
+    if (rotatedPos(slots[i], off) !== 1) continue;
+    return !shouldSkipLiberoAtPos1(team, slots[i], 1, force);
+  }
+  return true;
 }
 
 function activateLiberoAtPos(team, courtPos, liberoId, force){
@@ -1069,13 +1125,11 @@ function middleServesInRotation(team, label){
 }
 
 function liberoEnabledForMiddle(team, label){
-  ensureRotation(team);
-  if (!isLiberoReplaceConfigured(team)) return false;
   var slot = label === 'MB2' ? 3 : 6;
-  return getLiberoReplaceBaseSlot(team) === slot;
+  return isLiberoReplaceSlot(team, slot);
 }
 
-// Legacy helper — prefer shouldSkipLiberoAtPos1 + getLiberoReplaceBaseSlot.
+// Legacy helper — prefer shouldSkipLiberoAtPos1 + isLiberoReplaceSlot.
 function shouldSkipLiberoForMiddle(team, label, courtPos, force){
   var slot = label === 'MB2' ? 3 : 6;
   return shouldSkipLiberoAtPos1(team, slot, courtPos, force);
@@ -1106,9 +1160,13 @@ function getLiberoDisplayTarget(team){
   }
   if (!isLiberoReplaceConfigured(team)) return null;
   var pos = findLiberoEligibleCourtPos(team);
-  var bs = getLiberoReplaceBaseSlot(team);
-  if (!pos) return formatLiberoReplaceLabel(team, bs) + ' (front row)';
-  return formatLiberoReplaceLabel(team, bs);
+  if (pos){
+    var bs = inverseBaseForCurrentPos(pos, team.rotation.offset || 0);
+    return formatLiberoReplaceLabel(team, bs);
+  }
+  var slots = getLiberoReplaceBaseSlots(team);
+  if (!slots.length) return null;
+  return slots.map(function(s){ return formatLiberoReplaceChipLabel(team, s); }).join(' · ') + ' (front row)';
 }
 
 function tryActivateLibero(team, offset, force){
@@ -1480,7 +1538,9 @@ function cloneRotationForUndo(rot){
     srSystem: rot.srSystem || '5-1',
     subCount: rot.subCount || 0,
     liberoMB2: rot.liberoMB2 !== false,
-    liberoReplaceBaseSlot: rot.liberoReplaceBaseSlot != null ? rot.liberoReplaceBaseSlot : 6,
+    liberoReplaceBaseSlots: Array.isArray(rot.liberoReplaceBaseSlots) && rot.liberoReplaceBaseSlots.length
+      ? rot.liberoReplaceBaseSlots.slice()
+      : (rot.liberoReplaceBaseSlot != null ? [rot.liberoReplaceBaseSlot] : [3, 6]),
     liberoServeForBaseSlot: rot.liberoServeForBaseSlot != null ? rot.liberoServeForBaseSlot : 6,
     liberoReplaceEnabled: rot.liberoReplaceEnabled !== false,
     liberoOriginalServesAtPos1: rot.liberoOriginalServesAtPos1 !== false,
@@ -3471,7 +3531,7 @@ document.addEventListener('DOMContentLoaded', function(){
   function slotHasAutoSubConfigured(team, slot){
     if (!team || !team.rotation || !slot) return false;
     if (isSubRuleSlot(slot)) return !!(team.rotation.autoSubs && team.rotation.autoSubs[slot]);
-    if (isLiberoReplaceConfigured(team) && getLiberoReplaceBaseSlot(team) === slot) return true;
+    if (isLiberoReplaceSlot(team, slot)) return true;
     return false;
   }
 
@@ -3568,10 +3628,10 @@ document.addEventListener('DOMContentLoaded', function(){
 
   function syncLiberoRulesUI(team){
     var row = byId('liberoRulesRow');
-    var replaceSel = byId('liberoReplaceSelect');
+    var replaceChips = byId('liberoReplaceChips');
     var serveSel = byId('liberoServeForSelect');
     var serveCheck = byId('liberoOriginalServesCheck');
-    if (!row || !replaceSel || !serveSel) return;
+    if (!row || !replaceChips || !serveSel) return;
     if (_setBaseMode || !team){
       row.style.display = 'none';
       return;
@@ -3580,27 +3640,38 @@ document.addEventListener('DOMContentLoaded', function(){
     ensureRotation(team);
     autoFillBaseFromRoster(team);
 
-    function fillSelect(selectEl, selectedSlot){
-      var cur = selectEl.value;
-      selectEl.innerHTML = '';
-      var offOpt = document.createElement('option');
-      offOpt.value = 'off';
-      offOpt.textContent = '— Off —';
-      selectEl.appendChild(offOpt);
-      for (var s=1; s<=6; s++){
-        var opt = document.createElement('option');
-        opt.value = String(s);
-        opt.textContent = formatLiberoReplaceLabel(team, s);
-        selectEl.appendChild(opt);
-      }
-      if (!isLiberoReplaceConfigured(team)) selectEl.value = 'off';
-      else selectEl.value = String(getLiberoReplaceBaseSlot(team));
-      if (cur && selectEl.querySelector('option[value="' + cur + '"]')) selectEl.value = cur;
-      if (selectedSlot) selectEl.value = isLiberoReplaceConfigured(team) ? String(selectedSlot) : 'off';
+    var selected = getLiberoReplaceBaseSlots(team);
+    replaceChips.innerHTML = '';
+    for (var s=1; s<=6; s++){
+      (function(baseSlot){
+        var chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'libero-replace-chip' + (selected.indexOf(baseSlot) >= 0 ? ' selected' : '');
+        chip.textContent = formatLiberoReplaceChipLabel(team, baseSlot);
+        chip.title = formatLiberoReplaceLabel(team, baseSlot);
+        chip.addEventListener('click', function(e){
+          e.stopPropagation();
+          var on = selected.indexOf(baseSlot) < 0;
+          toggleLiberoReplaceSlot(team, baseSlot, on);
+          if (!on && team.rotation.liberoActive && team.rotation.liberoReplacesBaseSlot === baseSlot){
+            deactivateLibero(team);
+          }
+          applyRulesForOffset(team, team.rotation.offset || 0);
+          saveState();
+          renderRotationWheel();
+        });
+        replaceChips.appendChild(chip);
+      })(s);
     }
 
-    fillSelect(replaceSel);
-    fillSelect(serveSel, getLiberoServeForBaseSlot(team));
+    serveSel.innerHTML = '';
+    for (var s2=1; s2<=6; s2++){
+      var opt = document.createElement('option');
+      opt.value = String(s2);
+      opt.textContent = formatLiberoReplaceLabel(team, s2);
+      serveSel.appendChild(opt);
+    }
+    serveSel.value = String(getLiberoServeForBaseSlot(team));
     if (serveCheck) serveCheck.checked = team.rotation.liberoOriginalServesAtPos1 !== false;
   }
 
@@ -4108,12 +4179,12 @@ document.addEventListener('DOMContentLoaded', function(){
       autoExpand.className = 'rot-menu-expand';
       if (isMBBaseSlot(baseSlot)){
         var mbLabel = baseSlot === 3 ? 'MB2' : 'MB1';
-        var libOn = getLiberoReplaceBaseSlot(team) === baseSlot && isLiberoReplaceConfigured(team);
+        var libOn = isLiberoReplaceSlot(team, baseSlot);
         var libRow = document.createElement('div');
         libRow.className = 'rot-menu-row';
         libRow.appendChild(document.createTextNode('Libero replaces back row'));
         libRow.appendChild(makeMenuToggle(libOn, function(on){
-          setLiberoReplaceBaseSlot(team, baseSlot, on);
+          toggleLiberoReplaceSlot(team, baseSlot, on);
           if (!on && team.rotation.liberoActive && team.rotation.liberoReplacesBaseSlot === baseSlot){
             deactivateLibero(team);
           }
@@ -4216,7 +4287,7 @@ document.addEventListener('DOMContentLoaded', function(){
         refreshMenu();
       }));
       serveSec.appendChild(serveRow);
-    } else if (getLiberoReplaceBaseSlot(team) === baseSlot && isLiberoReplaceConfigured(team)){
+    } else if (isLiberoReplaceSlot(team, baseSlot)){
       var libServe = getLiberoServeForBaseSlot(team) === baseSlot && team.rotation.liberoOriginalServesAtPos1 !== false;
       var libServeRow = document.createElement('div');
       libServeRow.className = 'rot-menu-row';
@@ -4423,7 +4494,7 @@ document.addEventListener('DOMContentLoaded', function(){
         autoBadge.textContent = '↔ #' + (autoSubPlayer.number || '?') + ' ' + firstName(autoSubPlayer.name);
         autoBadge.title = 'Auto-sub: ' + autoSubPlayer.name;
         wrap.appendChild(autoBadge);
-      } else if (hasAutoSub && baseSlot && isLiberoReplaceConfigured(team) && getLiberoReplaceBaseSlot(team) === baseSlot){
+      } else if (hasAutoSub && baseSlot && isLiberoReplaceSlot(team, baseSlot)){
         var libBadge = document.createElement('div');
         libBadge.className = 'rot-auto-sub-badge';
         libBadge.textContent = '↔ Libero';
@@ -4756,16 +4827,6 @@ document.addEventListener('DOMContentLoaded', function(){
     renderRotationWheel();
   });
 
-  var liberoReplaceSelect = byId('liberoReplaceSelect');
-  if (liberoReplaceSelect) liberoReplaceSelect.addEventListener('change', function(){
-    var team = activeTeam();
-    if (!team) return;
-    if (liberoReplaceSelect.value === 'off') setLiberoReplaceBaseSlot(team, null, false);
-    else setLiberoReplaceBaseSlot(team, parseInt(liberoReplaceSelect.value, 10), true);
-    applyRulesForOffset(team, team.rotation.offset || 0);
-    saveState();
-    renderRotationWheel();
-  });
   var liberoServeForSelect = byId('liberoServeForSelect');
   if (liberoServeForSelect) liberoServeForSelect.addEventListener('change', function(){
     var team = activeTeam();
