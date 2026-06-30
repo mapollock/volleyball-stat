@@ -10,7 +10,7 @@
  *   Manual +our score also triggers rotation when we didn't have the ball.
  */
 
-var APP_VERSION = '0.1.167';
+var APP_VERSION = '0.1.168';
 console.log('[VolleyStat] v' + APP_VERSION + ' loaded');
 
 var STORAGE_KEY = 'volleystat_v1'; // stable key — do not change between versions
@@ -27,6 +27,7 @@ var SERVE_WEIGHTS = { serve1: 1, serve2: 2, serve3: 3, ace: 4 };
 var HIT_ATTEMPT_ACTIONS = ['swing', 'swingOut', 'kill'];
 var HIT_ERROR_ACTIONS = ['swingOut'];
 var SERVE_ACTIONS = { serve1:1, serve2:1, serve3:1, ace:1, serveOut:1 };
+var PASS_ACTIONS = { passToTarget:1, passNearTarget:1, passAwayTarget:1, passShank:1 };
 
 // Unforced error action keys
 var ERROR_ACTIONS = ['errHitting', 'errServing', 'errPassing', 'errNet', 'errTwoHand', 'errRotation'];
@@ -282,6 +283,8 @@ function ensureRotation(team){
   if (team.rotation.liberoForMB1 === undefined) team.rotation.liberoForMB1 = true;
   if (team.rotation.liberoForMB2 === undefined) team.rotation.liberoForMB2 = true;
   if (team.rotation.liberoAutoOnRotate === undefined) team.rotation.liberoAutoOnRotate = true;
+  if (team.rotation.firstBallPending === undefined) team.rotation.firstBallPending = false;
+  if (team.rotation.firstBallMode === undefined) team.rotation.firstBallMode = null;
   // Libero must never be tracked as a bench auto-sub
   var libIdClean = getLiberoId(team);
   if (libIdClean && team.rotation.autoSubs){
@@ -595,6 +598,27 @@ function clearSetStats(team, matchKey, setNum){
   if (team.setLineups && team.setLineups[matchKey]) delete team.setLineups[matchKey][setKey];
   var parts = parseMatchKey(matchKey);
   scoreStore[scoreKeyFor(parts.day, parts.match, setNum)] = { our: 0, opp: 0 };
+  clearSetKickoff(team, matchKey, setNum);
+}
+
+function setKickoffKey(matchKey, setNum){
+  return (matchKey || '') + '::' + String(setNum || '1');
+}
+
+function isSetKickoffDone(team, matchKey, setNum){
+  if (!team || !team.kickoffDone) return false;
+  return !!team.kickoffDone[setKickoffKey(matchKey, setNum)];
+}
+
+function markSetKickoffDone(team, matchKey, setNum){
+  if (!team) return;
+  if (!team.kickoffDone) team.kickoffDone = {};
+  team.kickoffDone[setKickoffKey(matchKey, setNum)] = true;
+}
+
+function clearSetKickoff(team, matchKey, setNum){
+  if (!team || !team.kickoffDone) return;
+  delete team.kickoffDone[setKickoffKey(matchKey, setNum)];
 }
 
 function scoreKeyFromHistoryEntry(entry){
@@ -800,6 +824,8 @@ function resetRotationRuntimeState(team){
   team.rotation.liberoSlot = null;
   team.rotation.liberoCourtPos = null;
   team.rotation.srMode = false;
+  team.rotation.firstBallPending = false;
+  team.rotation.firstBallMode = null;
 }
 
 function courtLineupFromBaseObj(baseObj){
@@ -1439,6 +1465,7 @@ function normalizeTeam(team){
   if (!Array.isArray(team.matches) || !team.matches.length) team.matches = DEFAULT_MATCHES.slice();
   if (!Array.isArray(team.players)) team.players = [];
   if (!Array.isArray(team.history)) team.history = [];
+  if (!team.kickoffDone) team.kickoffDone = {};
   if (!team.liberoByMatch) team.liberoByMatch = {};
   if (!team.lastLiberoByMatch) team.lastLiberoByMatch = {};
   ensureSetLineups(team);
@@ -1820,7 +1847,18 @@ document.addEventListener('DOMContentLoaded', function(){
     var last = byId('ucLastActionBar');
     var team = activeTeam();
     if (rec){
-      if (!team || !activePlayerId){
+      if (team && team.rotation.firstBallPending && team.rotation.firstBallMode === 'serve'){
+        rec.textContent = '▶ First serve — tap serve rating below';
+        rec.className = 'uc-status-pill uc-recording active';
+      } else if (team && team.rotation.firstBallPending && team.rotation.firstBallMode === 'receive'){
+        if (activePlayerId && getCourtPosForPlayer(team, activePlayerId)){
+          rec.textContent = '▶ ' + formatPlayerLabel(team, activePlayerId) + ' — pass rating below';
+          rec.className = 'uc-status-pill uc-recording active';
+        } else {
+          rec.textContent = 'Tap the player receiving the serve';
+          rec.className = 'uc-status-pill uc-recording empty';
+        }
+      } else if (!team || !activePlayerId){
         rec.textContent = 'Tap a player to record';
         rec.className = 'uc-status-pill uc-recording empty';
       } else {
@@ -1942,7 +1980,100 @@ document.addEventListener('DOMContentLoaded', function(){
     } else {
       renderUnifiedCourt();
     }
+    var team = activeTeam();
+    if (team && team.rotation.firstBallPending && team.rotation.firstBallMode === 'receive'){
+      applyFirstBallStatUI(team);
+    }
+    updateCourtStatusBar();
     if (pid && navigator.vibrate) navigator.vibrate(20);
+  }
+
+  function syncKickoffFromHistory(team){
+    if (!team) return;
+    var matchKey = getMatchKey();
+    var setNum = setSelect ? setSelect.value : '1';
+    if (isSetKickoffDone(team, matchKey, setNum)) return;
+    if (!team.history || !team.history.length) return;
+    for (var i = 0; i < team.history.length; i++){
+      var h = team.history[i];
+      if (h.auto) continue;
+      if (h.match === matchKey && String(h.set) === String(setNum)){
+        markSetKickoffDone(team, matchKey, setNum);
+        team.rotation.firstBallPending = false;
+        team.rotation.firstBallMode = null;
+        return;
+      }
+    }
+  }
+
+  function isFirstBallAction(action, mode){
+    if (mode === 'serve') return !!SERVE_ACTIONS[action];
+    if (mode === 'receive') return !!PASS_ACTIONS[action];
+    return false;
+  }
+
+  function applyFirstBallStatUI(team){
+    var section = byId('statSection');
+    if (!section) return;
+    section.classList.remove('first-ball-serve', 'first-ball-receive-wait', 'first-ball-receive-ready');
+    if (!team || !team.rotation.firstBallPending || !team.rotation.firstBallMode){
+      return;
+    }
+    if (team.rotation.firstBallMode === 'serve'){
+      section.classList.add('first-ball-serve');
+      return;
+    }
+    if (activePlayerId && getCourtPosForPlayer(team, activePlayerId)){
+      section.classList.add('first-ball-receive-ready');
+    } else {
+      section.classList.add('first-ball-receive-wait');
+    }
+  }
+
+  function endFirstBallMode(team, matchKey, setNum){
+    if (!team || !team.rotation.firstBallPending) return;
+    team.rotation.firstBallPending = false;
+    team.rotation.firstBallMode = null;
+    markSetKickoffDone(team, matchKey, setNum);
+    applyFirstBallStatUI(team);
+    updateStartGameBtn(team);
+  }
+
+  function startSetGame(team){
+    if (!team) return;
+    ensureRotation(team);
+    var matchKey = getMatchKey();
+    var setNum = setSelect ? setSelect.value : '1';
+    if (isSetKickoffDone(team, matchKey, setNum)) return;
+    team.rotation.firstBallPending = true;
+    team.rotation.firstBallMode = (team.rotation.hasBall !== false) ? 'serve' : 'receive';
+    if (team.rotation.firstBallMode === 'serve'){
+      autoSelectServer();
+    } else {
+      activePlayerId = '';
+      patchUnifiedCourtSelection();
+    }
+    applyFirstBallStatUI(team);
+    updateCourtStatusBar();
+    updateStartGameBtn(team);
+    saveState();
+    closeRotation();
+    renderRotationStrip();
+    renderUnifiedCourt();
+  }
+
+  function updateStartGameBtn(team){
+    var btn = byId('rotationStartGameBtn');
+    if (!btn) return;
+    if (_setBaseMode || !team){
+      btn.style.display = 'none';
+      return;
+    }
+    var matchKey = getMatchKey();
+    var setNum = setSelect ? setSelect.value : '1';
+    syncKickoffFromHistory(team);
+    var show = !isSetKickoffDone(team, matchKey, setNum) && !team.rotation.firstBallPending;
+    btn.style.display = show ? '' : 'none';
   }
 
   function renderUnifiedCourt(){
@@ -2115,6 +2246,9 @@ document.addEventListener('DOMContentLoaded', function(){
 
     if (hasTeam) syncExportNameDefault();
     updateAdvanceButton();
+    var kickTeam = activeTeam();
+    if (kickTeam) syncKickoffFromHistory(kickTeam);
+    applyFirstBallStatUI(kickTeam);
   }
 
   function updateAdvanceButton(){
@@ -2766,11 +2900,17 @@ document.addEventListener('DOMContentLoaded', function(){
     }
     enforceServingReceiveMode(team);
 
+    var matchKey = getMatchKey();
+    if (team.rotation.firstBallPending && isFirstBallAction(action, team.rotation.firstBallMode)){
+      endFirstBallMode(team, matchKey, set);
+    }
+
     saveState();
     closePicker();
     renderTable();
     updateOnboardingAndControls();
     renderRotationStrip();
+    applyFirstBallStatUI(team);
     if (rotationBackdrop && rotationBackdrop.style.display !== 'none') renderRotationWheel();
 
     // Visual feedback — button pulse + top banner
@@ -3447,6 +3587,7 @@ document.addEventListener('DOMContentLoaded', function(){
       if (doneBtn) doneBtn.style.display = '';
     }
     updateLiberoBtn(activeTeam());
+    updateStartGameBtn(activeTeam());
     syncLiberoSelect(activeTeam());
   }
 
@@ -3654,6 +3795,8 @@ document.addEventListener('DOMContentLoaded', function(){
     team.rotation.offset = Math.max(0, Math.min(5, (parseInt(startRot, 10) || 1) - 1));
     applyRulesForOffset(team, team.rotation.offset || 0);
     enforceServingReceiveMode(team);
+    clearSetKickoff(team, matchKey, setNum);
+    applyFirstBallStatUI(team);
     saveState();
     exitSetBaseMode();
     autoSelectServer();
@@ -3661,7 +3804,7 @@ document.addEventListener('DOMContentLoaded', function(){
     renderTable();
     renderRotationStrip();
     var hint = document.getElementById('rotationHint');
-    if (hint) hint.textContent = 'Base saved — tap Libero In to put libero on court for the back-row middle.';
+    if (hint) hint.textContent = 'Base saved — set liberos, serving/receiving, auto-subs, then Start Game.';
   }
 
   function hideRotPlayerMenu(){
@@ -4666,6 +4809,14 @@ document.addEventListener('DOMContentLoaded', function(){
         autoSelectServer();
         renderRotationWheel();
         renderTable();
+        return;
+      }
+      if (btn.id === 'rotationStartGameBtn'){
+        e.preventDefault();
+        e.stopPropagation();
+        var startTeam = activeTeam();
+        if (!startTeam) return;
+        startSetGame(startTeam);
         return;
       }
     }
@@ -5856,6 +6007,8 @@ document.addEventListener('DOMContentLoaded', function(){
     syncExportNameDefault();
     renderScore();
     renderRotationStrip();
+    if (team) syncKickoffFromHistory(team);
+    applyFirstBallStatUI(activeTeam());
   });
   setSelect.addEventListener('change', function(){
     var team = activeTeam();
@@ -5872,6 +6025,8 @@ document.addEventListener('DOMContentLoaded', function(){
     syncExportNameDefault();
     renderScore();
     renderRotationStrip();
+    if (team) syncKickoffFromHistory(team);
+    applyFirstBallStatUI(activeTeam());
   });
   viewSelect.addEventListener('change', function(){ renderTable(); syncExportNameDefault(); });
   teamSelect.addEventListener('change', function(){
@@ -6643,6 +6798,9 @@ document.addEventListener('DOMContentLoaded', function(){
     renderTable();
     updateOnboardingAndControls();
     syncActivePlayerToPossession();
+    var rTeam = activeTeam();
+    if (rTeam) syncKickoffFromHistory(rTeam);
+    applyFirstBallStatUI(rTeam);
     renderScore();
     renderRotationStrip();
     renderUnifiedCourt();

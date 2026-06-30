@@ -248,6 +248,14 @@
     }
     .stat-group{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px;margin-bottom:10px;}
     .stat-group-title{font-size:11px;font-weight:800;color:#6b7280;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;}
+    /* First ball — show only serve or receive actions until recorded */
+    .stat-section.first-ball-serve .stat-group,
+    .stat-section.first-ball-receive-wait .stat-group,
+    .stat-section.first-ball-receive-ready .stat-group{display:none;}
+    .stat-section.first-ball-serve #servingStatGroup{display:block;}
+    .stat-section.first-ball-receive-ready #srvRecGroup{display:block;}
+    .stat-section.first-ball-receive-ready #srvRecServingPanel{display:none !important;}
+    .stat-section.first-ball-receive-ready #srvRecReceivePanel{display:grid !important;}
     .stat-grid{display:flex;gap:6px;}
     .span2{flex:2;}
     .stat-btn{appearance:none;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;font-size:13px;min-height:36px;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;display:flex;align-items:center;justify-content:center;padding:5px 8px;text-align:center;line-height:1.1;transition:background .08s,transform .06s;box-shadow:0 1px 4px rgba(37,99,235,.2);flex:1;white-space:nowrap;}
@@ -642,9 +650,9 @@
   </div>
 
   <!-- ══ 4. STAT BUTTONS ════════════════════════════════════════════════════ -->
-  <div class="stat-section">
+  <div class="stat-section" id="statSection">
 
-    <div class="stat-group">
+    <div class="stat-group" id="servingStatGroup">
       <div class="stat-group-title">Serving</div>
       <div class="stat-grid cols-3">
         <button class="stat-btn" data-action="serve1">1</button>
@@ -1006,6 +1014,7 @@
           <button id="rotationForward" type="button" class="btn secondary" title="Rotate forward one position" style="font-size:18px;padding:8px 16px;">&#8592;</button>
           <button id="rotationReset" type="button" class="btn secondary" title="Back to Rot 1 starting lineup">Reset</button>
           <button id="rotationLiberoBtn" type="button" class="btn secondary" title="Put libero on court for back-row middle">Libero In</button>
+          <button id="rotationStartGameBtn" type="button" class="btn" style="display:none;font-weight:900;background:#16a34a;border-color:#15803d;color:#fff;" title="Begin tracking — first serve or pass only">Start Game</button>
         </span>
         <button id="rotationDone" type="button" class="btn">Done</button>
       </div>
@@ -1109,6 +1118,6 @@
       document.getElementById('loginError').classList.remove('visible');
     }
   </script>
-  <script type="module" src="app.js?v=0.1.167"></script>
+  <script type="module" src="app.js?v=0.1.168"></script>
 </body>
 </html>
