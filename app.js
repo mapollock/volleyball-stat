@@ -10,7 +10,7 @@
  *   Manual +our score also triggers rotation when we didn't have the ball.
  */
 
-var APP_VERSION = '0.1.169';
+var APP_VERSION = '0.1.170';
 console.log('[VolleyStat] v' + APP_VERSION + ' loaded');
 
 var STORAGE_KEY = 'volleystat_v1'; // stable key — do not change between versions
@@ -2072,13 +2072,11 @@ document.addEventListener('DOMContentLoaded', function(){
     var matchKey = getMatchKey();
     var setNum = setSelect ? setSelect.value : '1';
     syncKickoffFromHistory(team);
-    var show = !isSetKickoffDone(team, matchKey, setNum) && !team.rotation.firstBallPending;
+    var show = !_setBaseMode && !isSetKickoffDone(team, matchKey, setNum) && !team.rotation.firstBallPending;
     btn.style.display = show ? '' : 'none';
     if (!show) return;
-    btn.disabled = !!_setBaseMode;
-    btn.title = _setBaseMode
-      ? 'Save Base first — then set liberos, serving/receiving, and auto-subs'
-      : 'Begin tracking — first serve or pass only';
+    btn.disabled = false;
+    btn.title = 'Begin tracking — first serve or pass only';
   }
 
   function renderUnifiedCourt(){
@@ -3575,13 +3573,15 @@ document.addEventListener('DOMContentLoaded', function(){
     var coachCtrls = document.getElementById('rotationCoachControls');
     var setBaseActs = document.getElementById('setBaseActions');
     var hint = document.getElementById('rotationHint');
+    var subCount = document.getElementById('subCountDisplay');
     var doneBtn = byId('rotationDone');
     if (_setBaseMode){
       if (courtView) courtView.classList.add('set-base-mode');
       if (panel) panel.classList.add('open');
       if (coachCtrls) coachCtrls.style.display = 'none';
       if (setBaseActs) setBaseActs.style.display = 'flex';
-      if (hint) hint.textContent = 'Starting lineup — tap each position, then Save Base.';
+      if (hint) hint.textContent = 'Tap each position to assign your starting lineup, then Save Base.';
+      if (subCount) subCount.style.display = 'none';
       if (doneBtn) doneBtn.style.display = 'none';
     } else {
       if (courtView) courtView.classList.remove('set-base-mode');
@@ -3589,6 +3589,7 @@ document.addEventListener('DOMContentLoaded', function(){
       if (coachCtrls) coachCtrls.style.display = 'flex';
       if (setBaseActs) setBaseActs.style.display = 'none';
       if (hint) hint.textContent = 'Double-tap a player for Sub · Auto-sub · Serving';
+      if (subCount) subCount.style.display = '';
       if (doneBtn) doneBtn.style.display = '';
     }
     updateLiberoBtn(activeTeam());
@@ -3757,7 +3758,6 @@ document.addEventListener('DOMContentLoaded', function(){
     ourLabel.style.cssText = 'background:rgba(0,0,0,.15);color:rgba(255,255,255,.6);';
     ourLabel.textContent = '← Our Bench Side →';
     court.appendChild(ourLabel);
-    updateStartGameBtn(team);
   }
 
   function openSetBasePicker(courtPos){

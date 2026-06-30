@@ -98,7 +98,6 @@
     /* Set-base lineup card (ref lineup) */
     #setBasePanel{display:none;margin:10px 0 14px;}
     #setBasePanel.open{display:block;}
-    .set-base-hint{font-size:12px;color:#1e3a8a;font-weight:800;text-align:center;margin-bottom:8px;line-height:1.35;}
     .set-base-slot{appearance:none;border:2px dashed #93c5fd;background:#fff;border-radius:12px;padding:8px 6px;min-width:88px;max-width:110px;cursor:pointer;touch-action:manipulation;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px;}
     .set-base-slot:active{transform:scale(.97);}
     .set-base-slot.filled{border-style:solid;border-color:#2563eb;background:#eff6ff;}
@@ -965,7 +964,6 @@
             <div id="rotationWheel" class="rotation-wheel" aria-label="Rotation wheel"></div>
           </div>
           <div id="setBasePanel" aria-label="Set starting lineup">
-            <div class="set-base-hint">Tap each position to assign your starting lineup (like the ref lineup card).</div>
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
               <label style="font-size:11px;font-weight:800;color:#374151;">Start in rotation</label>
               <select id="setBaseStartRot" style="border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;font-size:12px;font-weight:800;">
@@ -1118,6 +1116,6 @@
       document.getElementById('loginError').classList.remove('visible');
     }
   </script>
-  <script type="module" src="app.js?v=0.1.169"></script>
+  <script type="module" src="app.js?v=0.1.170"></script>
 </body>
 </html>
