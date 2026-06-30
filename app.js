@@ -10,7 +10,7 @@
  *   Manual +our score also triggers rotation when we didn't have the ball.
  */
 
-var APP_VERSION = '0.1.168';
+var APP_VERSION = '0.1.169';
 console.log('[VolleyStat] v' + APP_VERSION + ' loaded');
 
 var STORAGE_KEY = 'volleystat_v1'; // stable key — do not change between versions
@@ -2065,7 +2065,7 @@ document.addEventListener('DOMContentLoaded', function(){
   function updateStartGameBtn(team){
     var btn = byId('rotationStartGameBtn');
     if (!btn) return;
-    if (_setBaseMode || !team){
+    if (!team){
       btn.style.display = 'none';
       return;
     }
@@ -2074,6 +2074,11 @@ document.addEventListener('DOMContentLoaded', function(){
     syncKickoffFromHistory(team);
     var show = !isSetKickoffDone(team, matchKey, setNum) && !team.rotation.firstBallPending;
     btn.style.display = show ? '' : 'none';
+    if (!show) return;
+    btn.disabled = !!_setBaseMode;
+    btn.title = _setBaseMode
+      ? 'Save Base first — then set liberos, serving/receiving, and auto-subs'
+      : 'Begin tracking — first serve or pass only';
   }
 
   function renderUnifiedCourt(){
@@ -3752,6 +3757,7 @@ document.addEventListener('DOMContentLoaded', function(){
     ourLabel.style.cssText = 'background:rgba(0,0,0,.15);color:rgba(255,255,255,.6);';
     ourLabel.textContent = '← Our Bench Side →';
     court.appendChild(ourLabel);
+    updateStartGameBtn(team);
   }
 
   function openSetBasePicker(courtPos){
