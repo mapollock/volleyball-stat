@@ -10,7 +10,7 @@
  *   Manual +our score also triggers rotation when we didn't have the ball.
  */
 
-var APP_VERSION = '0.1.163';
+var APP_VERSION = '0.1.164';
 console.log('[VolleyStat] v' + APP_VERSION + ' loaded');
 
 var STORAGE_KEY = 'volleystat_v1'; // stable key — do not change between versions
@@ -205,6 +205,36 @@ function countMatchSetsWon(day, match, throughSet, tournament, scoreStoreRef){
     else if (sop >= sw && (sop - so) >= 2) opp++;
   }
   return { our: our, opp: opp };
+}
+
+function isSetWon(score, setNum, tournament){
+  if (!score) return false;
+  var winScore = getSetWinScore(setNum, tournament);
+  var our = score.our || 0, opp = score.opp || 0;
+  return (our >= winScore && (our - opp) >= 2) || (opp >= winScore && (opp - our) >= 2);
+}
+
+function getMatchAdvanceState(day, match, setNum, score, team){
+  var tournament = getTournament();
+  var setsToWin = setsToWinMatch(tournament.format);
+  var scoreRef = Object.assign({}, scoreStore, { _current: score });
+  var setComplete = isSetWon(score, setNum, tournament);
+  var won = countMatchSetsWon(day, match, setNum, tournament, scoreRef);
+  var matchClinched = won.our >= setsToWin || won.opp >= setsToWin;
+  var matches = (team && team.matches && team.matches.length) ? team.matches : DEFAULT_MATCHES;
+  var matchIdx = matches.indexOf(match);
+  var hasNextMatch = setComplete && matchClinched && matchIdx >= 0 && matchIdx < matches.length - 1;
+  var hasNextSet = setComplete && !matchClinched;
+  return {
+    setComplete: setComplete,
+    matchClinched: matchClinched,
+    hasNextSet: hasNextSet,
+    hasNextMatch: hasNextMatch,
+    nextMatch: hasNextMatch ? matches[matchIdx + 1] : null,
+    setsWonOur: won.our,
+    setsWonOpp: won.opp,
+    setsToWin: setsToWin
+  };
 }
 
 function getOnCourtPlayerIdSet(team){
@@ -2060,6 +2090,34 @@ document.addEventListener('DOMContentLoaded', function(){
     setToolbarStatsEnabled(hasRoster);
 
     if (hasTeam) syncExportNameDefault();
+    updateAdvanceButton();
+  }
+
+  function updateAdvanceButton(){
+    var btn = byId('ucNextSetBtn');
+    if (!btn) return;
+    var team = activeTeam();
+    var hasRoster = !!(team && team.players && team.players.length);
+    if (!hasRoster){
+      btn.style.display = 'none';
+      return;
+    }
+    var curDay = daySelect ? daySelect.value : 'Day 1';
+    var curMatch = matchSelect ? matchSelect.value : 'Match 1';
+    var curSet = parseInt(setSelect ? setSelect.value : '1', 10) || 1;
+    var adv = getMatchAdvanceState(curDay, curMatch, curSet, currentScore(), team);
+    if (adv.hasNextMatch){
+      btn.style.display = '';
+      btn.textContent = 'Next Match ▶';
+      btn.dataset.advance = 'match';
+    } else if (adv.hasNextSet){
+      btn.style.display = '';
+      btn.textContent = 'Next Set ▶';
+      btn.dataset.advance = 'set';
+    } else {
+      btn.style.display = 'none';
+      btn.dataset.advance = '';
+    }
   }
 
   // Export confirm modal plumbing
@@ -4312,7 +4370,16 @@ document.addEventListener('DOMContentLoaded', function(){
   var ucNextSetBtn = byId('ucNextSetBtn');
   if (ucRulesBtn) ucRulesBtn.addEventListener('click', openRotation);
   if (ucUndoBtn) ucUndoBtn.addEventListener('click', undoLast);
-  if (ucNextSetBtn) ucNextSetBtn.addEventListener('click', function(){ if (window._vsNextSet) window._vsNextSet(); });
+  if (ucNextSetBtn) ucNextSetBtn.addEventListener('click', function(){
+    var team = activeTeam();
+    if (!team) return;
+    var curDay = daySelect ? daySelect.value : 'Day 1';
+    var curMatch = matchSelect ? matchSelect.value : 'Match 1';
+    var curSet = parseInt(setSelect ? setSelect.value : '1', 10) || 1;
+    var adv = getMatchAdvanceState(curDay, curMatch, curSet, currentScore(), team);
+    if (adv.hasNextMatch && window._vsNextMatch) window._vsNextMatch();
+    else if (adv.hasNextSet && window._vsNextSet) window._vsNextSet();
+  });
 
   var ucRotForward = byId('ucRotForward');
   var ucRotBack = byId('ucRotBack');
@@ -5284,6 +5351,16 @@ document.addEventListener('DOMContentLoaded', function(){
   void liberoChips;
 
   // ── Save & Advance to next set / match ────────────────────────────────────
+  function archiveCurrentSetSnapshot(team, curDay, curMatch, curSet){
+    var score = currentScore();
+    var resultStr = curMatch + ' · Set ' + curSet + ': ' + (score.our || 0) + '-' + (score.opp || 0);
+    if (window._firebaseArchive){
+      var now = new Date();
+      var archLabel = (team.name || 'Team') + ' · ' + resultStr + ' · '
+        + now.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+      window._firebaseArchive(state, archLabel).catch(function(e){ console.warn('[VolleyStat] Archive failed:', e.message); });
+    }
+  }
   function openNextSetLineupPrompt(nextSetNum, nextMatchName, defaultRot, team, matchKey){
     return new Promise(function(resolve){
       var bd = byId('nextSetBackdrop');
@@ -5359,67 +5436,24 @@ document.addEventListener('DOMContentLoaded', function(){
 
     var curSet   = parseInt(setSelect ? setSelect.value : '1') || 1;
     var curMatch = matchSelect ? matchSelect.value : 'Match 1';
+    var curDay   = daySelect ? daySelect.value : 'Day 1';
     var score    = currentScore();
     var our = score.our || 0, opp = score.opp || 0;
-    var tournament = getTournament();
-    var winScore   = getSetWinScore(curSet, tournament);
-    var ourWon  = our >= winScore && (our - opp) >= 2;
-    var oppWon  = opp >= winScore && (opp - our) >= 2;
+    var adv = getMatchAdvanceState(curDay, curMatch, curSet, score, team);
+    if (!adv.hasNextSet) return;
 
-    var resultStr = curMatch + ' · Set ' + curSet + ': ' + our + '-' + opp;
-    if (!ourWon && !oppWon){
-      if (!await vsConfirm('Set ' + curSet + ' score is ' + our + '-' + opp + ' — set not complete yet.<br><br>Advance anyway?')) return;
-    } else {
-      var winner = ourWon ? 'WE WIN' : 'OPPONENT WINS';
-      if (!await vsConfirm(winner + ' Set ' + curSet + ': ' + our + '-' + opp + '<br><br>Save and advance?')) return;
-    }
+    var ourWon = our >= getSetWinScore(curSet) && (our - opp) >= 2;
+    var winner = ourWon ? 'WE WIN' : 'OPPONENT WINS';
+    if (!await vsConfirm(winner + ' Set ' + curSet + ': ' + our + '-' + opp + '<br><br>Save and start Set ' + (curSet + 1) + '?')) return;
 
-    // Archive current stats snapshot — fire and forget, don't block on offline
-    if (window._firebaseArchive) {
-      var now = new Date();
-      var archLabel = (team.name || 'Team') + ' · ' + resultStr + ' · '
-        + now.toLocaleDateString('en-US', {month:'short', day:'numeric'});
-      window._firebaseArchive(state, archLabel).catch(function(e){ console.warn('[VolleyStat] Archive failed:', e.message); });
-    }
+    archiveCurrentSetSnapshot(team, curDay, curMatch, curSet);
 
-    // Count sets won in this match (win by 2 at set target score)
-    var curDay = daySelect ? daySelect.value : 'Day 1';
-    var matchKey = curDay + ' - ' + curMatch;
-    var setsToWin = setsToWinMatch(tournament.format);
-    var maxSets = maxSetsInMatch(tournament.format);
-    var scoreRef = Object.assign({}, scoreStore, { _current: score });
-    var won = countMatchSetsWon(curDay, curMatch, curSet, tournament, scoreRef);
-    var matchSetsOur = won.our;
-    var matchSetsOpp = won.opp;
-
-    var nextSet   = curSet + 1;
+    var nextSet = curSet + 1;
     var nextMatch = curMatch;
-    var matchClinched = (matchSetsOur >= setsToWin || matchSetsOpp >= setsToWin);
-    var matchOver = matchClinched || nextSet > maxSets;
-
-    if (matchOver){
-      var matches = team.matches || DEFAULT_MATCHES;
-      var matchIdx = matches.indexOf(curMatch);
-      if (matchIdx >= 0 && matchIdx < matches.length - 1){
-        nextMatch = matches[matchIdx + 1];
-        nextSet = 1;
-        var mWinner = matchSetsOur >= setsToWin ? 'WE WIN' : 'OPPONENT WINS';
-        var clinchNote = matchClinched
-          ? (' Match finalized' + (curSet === 3 && tournament.format === 'bestOf3' ? ' (deciding set)' : '') + '.')
-          : '';
-        if (!await vsConfirm(mWinner + ' the match' + clinchNote + '<br><br>Advancing to ' + nextMatch + ' · Set 1.')) return;
-      } else {
-        await vsConfirm('All matches complete for this day.');
-        return;
-      }
-    }
-
     var nextMatchKey = curDay + ' - ' + nextMatch;
     var nextLineup = getSetLineup(team, nextMatchKey, nextSet);
     if (!nextLineup){
-      var defaultRot = (nextMatch !== curMatch)
-        ? 1
-        : ((team.rotation.offset || 0) + 1);
+      var defaultRot = (team.rotation.offset || 0) + 1;
       var picked = await openNextSetLineupPrompt(nextSet, nextMatch, defaultRot, team, nextMatchKey);
       if (!picked) return;
       var baseForPlan = picked.base
@@ -5433,11 +5467,6 @@ document.addEventListener('DOMContentLoaded', function(){
     applySetStart(team, nextMatchKey, nextSet);
     applyLiberoForCurrentMatch(team);
 
-    // Advance selectors
-    if (matchSelect && nextMatch !== curMatch){
-      matchSelect.value = nextMatch;
-      matchSelect.dispatchEvent(new Event('change'));
-    }
     if (setSelect){
       setSelect.value = String(nextSet);
       setSelect.dispatchEvent(new Event('change'));
@@ -5450,6 +5479,59 @@ document.addEventListener('DOMContentLoaded', function(){
     renderScore();
     autoSelectServer();
     if (window._firebaseRegisterSession && team.name) window._firebaseRegisterSession(team.name);
+  };
+
+  window._vsNextMatch = async function(){
+    var vsConfirm = window.vsConfirm || function(){ return Promise.resolve(true); };
+    var team = activeTeam();
+    if (!team) return;
+
+    var curSet   = parseInt(setSelect ? setSelect.value : '1') || 1;
+    var curMatch = matchSelect ? matchSelect.value : 'Match 1';
+    var curDay   = daySelect ? daySelect.value : 'Day 1';
+    var score    = currentScore();
+    var our = score.our || 0, opp = score.opp || 0;
+    var adv = getMatchAdvanceState(curDay, curMatch, curSet, score, team);
+    if (!adv.hasNextMatch || !adv.nextMatch) return;
+
+    var mWinner = adv.setsWonOur >= adv.setsToWin ? 'WE WIN' : 'OPPONENT WINS';
+    var tFmt = getTournament().format;
+    var clinchNote = (tFmt === 'bestOf3' && curSet === 3) || (tFmt === 'bestOf5' && curSet === 5)
+      ? ' (deciding set)' : '';
+    if (!await vsConfirm(mWinner + ' the match' + clinchNote + ' (' + adv.setsWonOur + '-' + adv.setsWonOpp + ' sets).<br><br>'
+      + 'Set ' + curSet + ' final: ' + our + '-' + opp + '<br>Save and prepare ' + adv.nextMatch + '?')) return;
+
+    archiveCurrentSetSnapshot(team, curDay, curMatch, curSet);
+
+    var nextMatch = adv.nextMatch;
+    var nextSet = 1;
+    var nextMatchKey = curDay + ' - ' + nextMatch;
+
+    if (setSelect){
+      setSelect.value = String(nextSet);
+      var mobileSet = byId('mobileSetSelect');
+      if (mobileSet) mobileSet.value = String(nextSet);
+    }
+    if (matchSelect){
+      matchSelect.value = nextMatch;
+      var mobileMatch = byId('mobileMatchSelect');
+      if (mobileMatch) mobileMatch.value = nextMatch;
+      matchSelect.dispatchEvent(new Event('change'));
+    } else {
+      applySetStart(team, nextMatchKey, nextSet);
+      applyLiberoForCurrentMatch(team);
+    }
+
+    saveState();
+    renderTable();
+    updateOnboardingAndControls();
+    renderRotationStrip();
+    renderScore();
+    autoSelectServer();
+    if (window._firebaseRegisterSession && team.name) window._firebaseRegisterSession(team.name);
+
+    openRotation();
+    enterSetBaseMode();
   };
 
   window._vsReset = async function(){
@@ -6387,6 +6469,7 @@ document.addEventListener('DOMContentLoaded', function(){
       var winTo = getSetWinScore(setNum);
       setLabelEl.textContent = day + ' · ' + matchName + ' · Set ' + setNum + ' (to ' + winTo + ')';
     }
+    updateAdvanceButton();
   }
 
   function refreshAllUI(){
