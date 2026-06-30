@@ -10,7 +10,7 @@
  *   Manual +our score also triggers rotation when we didn't have the ball.
  */
 
-var APP_VERSION = '0.1.165';
+var APP_VERSION = '0.1.166';
 console.log('[VolleyStat] v' + APP_VERSION + ' loaded');
 
 var STORAGE_KEY = 'volleystat_v1'; // stable key — do not change between versions
@@ -2797,7 +2797,7 @@ document.addEventListener('DOMContentLoaded', function(){
     // Show/update quick-record banner for currently selected player
     var quickBar = byId('pickerQuickBar');
     if (quickBar){
-      if (selectionMode === 'rotationManualSub' || selectionMode === 'rotationAutoSub' || selectionMode === 'setBaseAssign'){
+      if (selectionMode === 'rotationManualSub' || selectionMode === 'rotationAutoSub' || selectionMode === 'setBaseAssign' || selectionMode === 'liberoDesignate'){
         quickBar.style.display = 'none';
       } else {
       var ap = null;
@@ -2829,6 +2829,18 @@ document.addEventListener('DOMContentLoaded', function(){
       return rosterSubPickerPlayers(team);
     }
     return (team && team.players) ? team.players.slice() : [];
+  }
+
+  function openLiberoSlotPicker(team, slotIndex){
+    selectionMode = 'liberoDesignate';
+    selectionPayload = slotIndex;
+    pendingAction = null;
+    _rotationWasOpenBeforePicker = false;
+    _rotMenuReopenSlot = null;
+    _rotMenuReopenExpand = null;
+    if (pickerTitle) pickerTitle.textContent = 'Libero ' + (slotIndex + 1) + ' — choose DS / Libero';
+    if (pickerBackdrop) pickerBackdrop.style.zIndex = '1200';
+    openPicker();
   }
 
   function openRotationSubPicker(team, baseSlot, mode, expandKey){
@@ -2887,19 +2899,62 @@ document.addEventListener('DOMContentLoaded', function(){
     var players = (team && team.players ? team.players.slice() : []);
     if (selectionMode === 'rotationManualSub' || selectionMode === 'rotationAutoSub'){
       players = getRotationPickerCandidates(team, selectionMode, selectionPayload);
+    } else if (selectionMode === 'liberoDesignate'){
+      players = getLiberoCandidates(team);
     }
     players.sort(sortPlayers);
+
+    if (selectionMode === 'liberoDesignate'){
+      var slotIdx = parseInt(selectionPayload, 10);
+      var matchKey = getMatchKey();
+      var curDes = getLiberoDesignations(team, matchKey);
+      var curSlotId = (slotIdx >= 0 && slotIdx < 2) ? curDes[slotIdx] : null;
+      var clearBtn = document.createElement('button');
+      clearBtn.type = 'button';
+      clearBtn.className = 'player-btn';
+      clearBtn.style.cssText = 'grid-column:1/-1;background:#fee2e2;color:#991b1b;border-color:#fca5a5;font-weight:800;';
+      clearBtn.textContent = curSlotId ? 'Clear Libero ' + (slotIdx + 1) : ('No libero assigned — Libero ' + (slotIdx + 1));
+      clearBtn.disabled = !curSlotId;
+      clearBtn.addEventListener('click', function(){
+        var t = activeTeam();
+        if (!t || slotIdx < 0 || slotIdx > 1) return;
+        var wasActing = t.rotation.liberoActive
+          && t.rotation.liberoId
+          && curSlotId
+          && playerIdKey(t.rotation.liberoId) === playerIdKey(curSlotId);
+        assignLiberoSlot(t, matchKey, slotIdx, null);
+        var nextDes = getLiberoDesignations(t, matchKey);
+        t.rotation.liberoId = nextDes[0] || null;
+        if (wasActing){
+          if (t.rotation.liberoId) tryActivateLibero(t, undefined, true);
+          else deactivateLibero(t);
+        }
+        saveState();
+        closePicker();
+        syncLiberoChips(t);
+        updateLiberoBtn(t);
+        renderRotationWheel();
+        renderUnifiedCourt();
+      });
+      playerGrid.appendChild(clearBtn);
+    }
 
     if (!players.length){
       var empty = document.createElement('div');
       empty.className = 'roster-item';
       empty.style.cssText = 'grid-column:1/-1;padding:12px;color:#6b7280;font-size:13px;';
-      empty.textContent = 'No players on roster. Add players in Roster first.';
+      empty.textContent = selectionMode === 'liberoDesignate'
+        ? 'No DS or Libero on roster. Add a player with position DS or LIB in Roster.'
+        : 'No players on roster. Add players in Roster first.';
       playerGrid.appendChild(empty);
       return;
     }
 
     var isSubPicker = selectionMode === 'rotationManualSub' || selectionMode === 'rotationAutoSub';
+    var libSlotIdx = selectionMode === 'liberoDesignate' ? parseInt(selectionPayload, 10) : -1;
+    var libMatchKey = selectionMode === 'liberoDesignate' ? getMatchKey() : '';
+    var libCurId = (libSlotIdx >= 0 && libSlotIdx < 2)
+      ? (getLiberoDesignations(team, libMatchKey)[libSlotIdx] || null) : null;
 
     for (var i=0;i<players.length;i++){
       (function(p){
@@ -2909,6 +2964,8 @@ document.addEventListener('DOMContentLoaded', function(){
         // Highlight currently selected player
         if (p.id === activePlayerId){
           btn.style.cssText = 'background:#1e3a8a;color:#fff;border-color:#1e3a8a;';
+        } else if (selectionMode === 'liberoDesignate' && libCurId && playerIdKey(p.id) === playerIdKey(libCurId)){
+          btn.style.cssText = 'background:#fde047;color:#422006;border-color:#000;font-weight:800;';
         }
         var top = (p.number ? '#' + p.number + ' ' : '') + (p.name || '');
         btn.appendChild(document.createTextNode(top));
@@ -2961,6 +3018,28 @@ document.addEventListener('DOMContentLoaded', function(){
               }
               closePicker();
               renderSetBasePanel();
+              return;
+            }
+          }
+
+          if (selectionMode === 'liberoDesignate'){
+            var libSlot = parseInt(selectionPayload, 10);
+            if (libSlot >= 0 && libSlot <= 1){
+              var mk = getMatchKey();
+              var wasActive = team.rotation.liberoActive;
+              var prevActing = team.rotation.liberoId;
+              assignLiberoSlot(team, mk, libSlot, p.id);
+              var nextDes = getLiberoDesignations(team, mk);
+              team.rotation.liberoId = p.id;
+              if (wasActive && prevActing && playerIdKey(prevActing) !== playerIdKey(p.id)){
+                tryActivateLibero(team, undefined, true);
+              }
+              saveState();
+              closePicker();
+              syncLiberoChips(team);
+              updateLiberoBtn(team);
+              renderRotationWheel();
+              renderUnifiedCourt();
               return;
             }
           }
@@ -3209,7 +3288,7 @@ document.addEventListener('DOMContentLoaded', function(){
       btn.style.background = '';
       btn.style.color = '';
       btn.style.borderColor = '';
-      btn.title = 'Tap L1/L2 chips above to designate up to 2 liberos';
+      btn.title = 'Tap L1/L2 chips to designate up to 2 liberos';
       return;
     }
     btn.disabled = false;
@@ -3272,44 +3351,6 @@ document.addEventListener('DOMContentLoaded', function(){
     var des = getLiberoDesignations(team, matchKey);
     while (des.length < 2) des.push(null);
 
-    function liberoChipClick(slotIndex, pid, player){
-      return function(e){
-        e.stopPropagation();
-        ensureRotation(team);
-        var wasActive = !!team.rotation.liberoActive;
-        var actingId = team.rotation.liberoId;
-        if (player && wasActive && actingId && playerIdKey(pid) !== playerIdKey(actingId)){
-          team.rotation.liberoId = pid;
-          saveState();
-          updateLiberoBtn(team);
-          renderRotationWheel();
-          renderUnifiedCourt();
-          return;
-        }
-        if (player && !wasActive){
-          team.rotation.liberoId = pid;
-          if (!tryActivateLibero(team, undefined, true)){
-            for (var bp=0; bp<3; bp++){
-              var pos = [1,5,6][bp];
-              if (activateLiberoAtPos(team, pos, pid, false)) break;
-            }
-          }
-          saveState();
-          updateLiberoBtn(team);
-          renderRotationWheel();
-          renderUnifiedCourt();
-          return;
-        }
-        var nextDes = cycleLiberoSlot(team, matchKey, slotIndex);
-        team.rotation.liberoId = nextDes[0] || null;
-        if (wasActive && team.rotation.liberoId) tryActivateLibero(team, undefined, true);
-        saveState();
-        updateLiberoBtn(team);
-        renderRotationWheel();
-        renderUnifiedCourt();
-      };
-    }
-
     targets.forEach(function(container){
       container.innerHTML = '';
       for (var slot=0; slot<2; slot++){
@@ -3321,12 +3362,11 @@ document.addEventListener('DOMContentLoaded', function(){
           chip.type = 'button';
           chip.className = 'libero-chip' + (onCourt ? ' on-court' : '') + (player ? '' : ' empty');
           chip.title = player
-            ? (onCourt ? 'On court — tap to swap/cycle' : 'Select on-court player, then tap to sub in')
+            ? (onCourt ? 'On court — tap to change designation' : 'Tap to change DS / Libero')
             : 'Tap to assign libero ' + (slotIndex + 1);
           chip.textContent = player
             ? ((onCourt ? '🏐 ' : '') + (player.number ? '#'+player.number+' ' : '') + firstName(player.name))
             : ('L' + (slotIndex + 1) + ' +');
-          var onLibChipClick = liberoChipClick(slotIndex, pid, player);
           chip.addEventListener('click', function(e){
             if (player && pid && activePlayerId && getCourtPosForPlayer(team, activePlayerId)
                 && playerIdKey(pid) !== playerIdKey(activePlayerId)){
@@ -3334,7 +3374,8 @@ document.addEventListener('DOMContentLoaded', function(){
               tryUnifiedCourtEntry(team, pid);
               return;
             }
-            onLibChipClick(e);
+            e.stopPropagation();
+            openLiberoSlotPicker(team, slotIndex);
           });
           container.appendChild(chip);
         })(slot);
