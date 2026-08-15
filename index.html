@@ -17,9 +17,25 @@
   <link rel="shortcut icon" href="favicon.svg" />
   <title>VolleyStat</title>
   <style>
+    :root{
+      /* Minimum comfortable touch target. Apple HIG is 44px, Material is 48px;
+         44 is the floor for anything tapped during a live rally. */
+      --tap-min:44px;
+      /* Gap that separates a destructive/irreversible action from its neighbour. */
+      --tap-separation:16px;
+    }
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#f0f2f5;color:#111827;}
     .page-wrap{max-width:1012px;margin:0 auto;background:#f0f2f5;box-shadow:0 0 30px rgba(0,0,0,.08);}
+
+    /* Keyboard focus. Buttons previously showed nothing on :focus, leaving
+       keyboard and switch-control users with no position indicator. */
+    :focus-visible{outline:3px solid #f59e0b;outline-offset:2px;border-radius:6px;}
+
+    @media(prefers-reduced-motion:reduce){
+      *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important;scroll-behavior:auto !important;}
+      .stat-btn:active{transform:none;}
+    }
 
     /* ── Modal stacking ── */
     .modal-backdrop{z-index:1000}
@@ -132,35 +148,44 @@
     .title-bar-text .tagline{font-size:11px;color:#93c5fd;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-top:3px;}
     .title-bar-meta{display:flex;align-items:center;gap:8px;margin-top:6px;}
     .title-bar-badge{background:rgba(251,191,36,.18);border:1px solid #fbbf24;color:#fbbf24;font-size:9px;font-weight:900;letter-spacing:.1em;padding:2px 7px;border-radius:20px;text-transform:uppercase;}
-    .title-bar-text a{font-size:11px;color:#60a5fa;font-weight:700;text-decoration:none;}
+    .title-bar-text a{font-size:11px;color:#93c5fd;font-weight:700;text-decoration:none;}
     .title-bar-text a:hover{color:#93c5fd;}
 
     /* ══ SECTION 2: Score ══ */
     .score-bar{background:#1e3a8a;padding:8px 12px;}
     /* Floating mode toggle in score bar */
     #scoreModeToggle{display:flex;background:rgba(255,255,255,.15);border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.25);}
-    .score-seg-btn{border:0;background:transparent;color:rgba(255,255,255,.65);padding:4px 10px;font-weight:800;font-size:11px;cursor:pointer;white-space:nowrap;min-height:30px;}
+    .score-seg-btn{border:0;background:transparent;color:rgba(255,255,255,.85);padding:4px 12px;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap;min-height:var(--tap-min);}
     .score-seg-btn[aria-pressed="true"]{background:rgba(255,255,255,.9);color:#1e3a8a;border-radius:6px;}
     .score-inner{display:flex;align-items:center;justify-content:space-between;gap:8px;}
     .score-side{display:flex;align-items:center;gap:6px;}
     .score-adj{display:flex;flex-direction:column;gap:3px;}
-    .score-adj-btn{appearance:none;border:none;background:rgba(255,255,255,.2);color:#fff;width:30px;height:30px;border-radius:6px;font-size:17px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;touch-action:manipulation;}
+    .score-adj-btn{appearance:none;border:none;background:rgba(255,255,255,.2);color:#fff;width:var(--tap-min);height:var(--tap-min);border-radius:6px;font-size:20px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;touch-action:manipulation;}
     .score-adj-btn:active{background:rgba(255,255,255,.4)}
-    #ourScoreUp{background:#16a34a;width:32px;height:32px;box-shadow:0 2px 6px rgba(0,0,0,.25);}
+    #ourScoreUp{background:#16a34a;width:var(--tap-min);height:var(--tap-min);box-shadow:0 2px 6px rgba(0,0,0,.25);}
     #ourScoreUp:active{background:#15803d;box-shadow:0 1px 3px rgba(0,0,0,.2);}
     .score-num{font-size:32px;font-weight:900;color:#fff;line-height:1;min-width:36px;text-align:center;}
-    .score-label{font-size:10px;font-weight:800;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.05em;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-    .score-center{flex:1;text-align:center;font-size:10px;color:rgba(255,255,255,.4);letter-spacing:.03em;padding:0 4px;}
+    /* .6 and .4 white on navy fell to ~3.8:1 and ~3.0:1 — unreadable in gym glare. */
+    .score-label{font-size:11px;font-weight:800;color:rgba(255,255,255,.85);text-transform:uppercase;letter-spacing:.05em;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .score-center{flex:1;text-align:center;font-size:11px;color:rgba(255,255,255,.8);letter-spacing:.03em;padding:0 4px;}
+
+    /* Rally outcome buttons in the rotation strip. Previously inline-styled at
+       ~26px tall, the smallest targets in the app despite being tapped every rally. */
+    .rally-btn{color:#fff;border:none;border-radius:8px;padding:4px 14px;min-height:var(--tap-min);font-size:12px;font-weight:900;cursor:pointer;touch-action:manipulation;white-space:nowrap;}
+    .rally-btn-ours{background:#16a34a;}
+    .rally-btn-ours:active{background:#15803d;}
+    .rally-btn-theirs{background:#dc2626;}
+    .rally-btn-theirs:active{background:#b91c1c;}
 
     /* ══ SECTION 3: Player strip ══ */
     .player-strip{background:#fff;border-bottom:2px solid #e5e7eb;padding:8px 14px;}
     .ps-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:6px;}
     .ps-title{font-size:11px;font-weight:800;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;}
     .ps-actions{display:flex;gap:5px;flex-wrap:wrap;}
-    .ps-btn{appearance:none;border:1px solid #e5e7eb;background:#f9fafb;color:#374151;padding:0 10px;height:32px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
+    .ps-btn{appearance:none;border:1px solid #e5e7eb;background:#f9fafb;color:#374151;padding:0 12px;min-height:var(--tap-min);border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;}
     .ps-btn.red{color:#dc2626;border-color:rgba(220,38,38,.3);}
-    .ps-btns{display:flex;flex-wrap:wrap;gap:5px;}
-    .player-pill{appearance:none;border:2px solid #e5e7eb;background:#fff;color:#374151;padding:6px 10px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:all .1s;white-space:nowrap;}
+    .ps-btns{display:flex;flex-wrap:wrap;gap:6px;}
+    .player-pill{appearance:none;border:2px solid #e5e7eb;background:#fff;color:#374151;padding:6px 12px;min-height:var(--tap-min);border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:all .1s;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;}
     .player-pill.active{background:#1e3a8a;color:#fff;border-color:#1e3a8a;}
     .sel-bar{margin-top:6px;padding:5px 10px;background:#1e3a8a;border-radius:7px;color:#fff;font-size:12px;font-weight:700;text-align:center;display:none;}
 
@@ -174,8 +199,10 @@
     .uc-status-pill.uc-last{background:#f9fafb;color:#374151;border:1px solid #e5e7eb;}
     .uc-status-pill.uc-last.is-error{background:#fef2f2;color:#b91c1c;border-color:#fecaca;}
     .uc-rot-label{font-size:12px;font-weight:900;color:#1e3a8a;letter-spacing:.02em;}
-    .uc-actions{display:flex;gap:5px;flex-wrap:wrap;}
-    .uc-btn{appearance:none;border:1px solid #e5e7eb;background:#f9fafb;color:#374151;padding:0 9px;height:30px;border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;touch-action:manipulation;white-space:nowrap;}
+    /* Undo sits next to the primary-styled Next Set. At a 5px gap these were easy
+       to confuse mid-set, and Next Set is not something you want to hit by accident. */
+    .uc-actions{display:flex;gap:var(--tap-separation);flex-wrap:wrap;align-items:center;}
+    .uc-btn{appearance:none;border:1px solid #e5e7eb;background:#f9fafb;color:#374151;padding:0 14px;min-height:var(--tap-min);border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;touch-action:manipulation;white-space:nowrap;}
     .uc-btn.primary{background:#1e3a8a;color:#fff;border-color:#1e3a8a;}
     .unified-court-grid{background:#e8f5e9;border:2px solid #4caf50;border-radius:10px;overflow:hidden;user-select:none;touch-action:manipulation;}
     .uc-net{background:#1e3a8a;color:rgba(255,255,255,.75);text-align:center;font-size:8px;font-weight:900;letter-spacing:.12em;padding:3px;}
@@ -191,18 +218,19 @@
     .uc-pos{font-size:9px;font-weight:900;line-height:1;}
     .uc-num{font-size:8px;font-weight:800;line-height:1;}
     .uc-name{font-size:9px;font-weight:800;color:#374151;text-align:center;max-width:80px;line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-    .uc-bench-hint{font-size:10px;color:#9ca3af;font-weight:700;margin:8px 0 2px;line-height:1.3;}
+    /* #9ca3af on white is 2.54:1 — fails AA outright and washes out in gym light. */
+    .uc-bench-hint{font-size:11px;color:#6b7280;font-weight:700;margin:8px 0 2px;line-height:1.3;}
     .uc-bench-label{font-size:10px;font-weight:800;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;margin:8px 0 4px;}
     .uc-bench-row{display:flex;align-items:stretch;gap:8px;}
     .uc-bench-main{flex:1;min-width:0;}
     .uc-rotation-rail{display:flex;flex-direction:column;gap:5px;flex-shrink:0;align-self:stretch;justify-content:flex-start;margin-left:auto;}
     .uc-rot-arrows{display:flex;gap:5px;}
-    .uc-rotation-rail .uc-btn{min-width:48px;height:38px;padding:0 6px;}
-    .uc-rotation-rail .uc-rot-arrows .uc-btn{flex:1;min-width:38px;font-size:22px;font-weight:900;line-height:1;}
+    .uc-rotation-rail .uc-btn{min-width:var(--tap-min);min-height:var(--tap-min);padding:0 6px;}
+    .uc-rotation-rail .uc-rot-arrows .uc-btn{flex:1;min-width:var(--tap-min);font-size:22px;font-weight:900;line-height:1;display:flex;align-items:center;justify-content:center;}
     #ucRotBack{color:#16a34a;border-color:#4ade80;}
     #ucRotForward{color:#dc2626;border-color:#f87171;}
-    .uc-rotation-rail .uc-btn.rotation-open{font-size:12px;letter-spacing:.02em;padding:0 8px;height:38px;font-weight:900;border:2px solid #000;}
-    .unified-bench-rail{display:flex;flex-wrap:wrap;gap:5px;min-height:32px;align-content:flex-start;}
+    .uc-rotation-rail .uc-btn.rotation-open{font-size:12px;letter-spacing:.02em;padding:0 8px;min-height:var(--tap-min);font-weight:900;border:2px solid #000;}
+    .unified-bench-rail{display:flex;flex-wrap:wrap;gap:6px;min-height:var(--tap-min);align-content:flex-start;}
     .uc-libero-row{display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap;}
     .uc-libero-label{font-size:10px;font-weight:800;color:#6b7280;}
     .uc-libero-auto{display:flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:#6b7280;margin-left:auto;white-space:nowrap;}
@@ -226,10 +254,10 @@
       /* Buttons: wrap allowed so rows never overflow */
       .stat-grid{flex-wrap:wrap;gap:4px;}
 
-      /* Base button: compact, equal share of row */
+      /* Base button: equal share of row, never below the tap floor */
       .stat-btn{
-        min-height:38px;
-        font-size:13px;
+        min-height:var(--tap-min);
+        font-size:15px;
         font-weight:900;
         padding:4px 4px;
         border-radius:7px;
@@ -265,11 +293,12 @@
     .stat-section.first-ball-receive-ready #srvRecReceivePanel{display:grid !important;}
     .stat-grid{display:flex;gap:6px;}
     .span2{flex:2;}
-    .stat-btn{appearance:none;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;font-size:13px;min-height:36px;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;display:flex;align-items:center;justify-content:center;padding:5px 8px;text-align:center;line-height:1.1;transition:background .08s,transform .06s;box-shadow:0 1px 4px rgba(37,99,235,.2);flex:1;white-space:nowrap;}
+    .stat-btn{appearance:none;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;font-size:14px;min-height:var(--tap-min);cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;display:flex;align-items:center;justify-content:center;padding:5px 8px;text-align:center;line-height:1.1;transition:background .08s,transform .06s;box-shadow:0 1px 4px rgba(37,99,235,.2);flex:1;white-space:nowrap;}
     .stat-btn:active{background:#1d4ed8;transform:scale(.96);box-shadow:none}
     .stat-btn.danger{background:#dc2626;box-shadow:0 2px 6px rgba(220,38,38,.2)}
     .stat-btn.danger:active{background:#b91c1c}
-    .stat-btn:disabled{background:#94a3b8;box-shadow:none;cursor:not-allowed}
+    /* #94a3b8 gave white text 2.56:1. #64748b clears 4.5:1 while still reading as disabled. */
+    .stat-btn:disabled{background:#64748b;box-shadow:none;cursor:not-allowed}
 
     /* ══ SECTION 5: Stats table ══ */
     .table-section{padding:10px 14px;}
@@ -294,12 +323,12 @@
     /* ══ SECTION 6: Bottom controls ══ */
     .bottom-controls{background:#fff;border-top:2px solid #e5e7eb;padding:12px 14px calc(12px + env(safe-area-inset-bottom,0px));}
     .bc-grid{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;}
-    @media(max-width:649px){.bc-select{min-width:80px;font-size:12px;} .bc-btn{font-size:12px;padding:7px 10px;} .bc-input{min-width:120px;font-size:12px;}}
+    @media(max-width:649px){.bc-select{min-width:80px;font-size:13px;} .bc-btn{font-size:13px;padding:7px 12px;} .bc-input{min-width:120px;font-size:13px;}}
     .bc-group{display:flex;flex-direction:column;gap:5px;}
     .bc-label{font-size:11px;font-weight:800;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;}
     .bc-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
-    .bc-select{border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-weight:700;background:#fff;font-size:13px;min-width:105px;}
-    .bc-btn{appearance:none;border:1px solid #e5e7eb;background:#f9fafb;color:#374151;padding:8px 12px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;min-height:38px;}
+    .bc-select{border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-weight:700;background:#fff;font-size:13px;min-width:105px;min-height:var(--tap-min);}
+    .bc-btn{appearance:none;border:1px solid #e5e7eb;background:#f9fafb;color:#374151;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;min-height:var(--tap-min);}
     .bc-btn:hover{background:#f3f4f6;}
     .bc-btn.primary{background:#2563eb;color:#fff;border-color:#1d4ed8;}
     .bc-btn.danger{background:#dc2626;color:#fff;border-color:#b91c1c;}
@@ -351,7 +380,8 @@
     #installHelpBackdrop .install-help-note{margin-top:12px;padding:10px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;font-size:12px;color:#1e3a8a;line-height:1.45;}
 
     /* ══ Sync bar ══ */
-    #syncBar{background:#1e3a8a;padding:5px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+    /* viewport-fit=cover is set, so top chrome must clear the notch itself. */
+    #syncBar{background:#1e3a8a;padding:calc(5px + env(safe-area-inset-top,0px)) 14px 5px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
     #syncStatus{font-size:11px;font-weight:700;color:#93c5fd;}
     .sync-settings-btn{background:transparent;border:1px solid rgba(255,255,255,.3);color:#93c5fd;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;}
 
@@ -362,7 +392,7 @@
     /* ══ Stat recorded feedback ══ */
     @keyframes statPulse{0%{background:#16a34a;color:#fff;transform:scale(1.05)}60%{background:#16a34a;color:#fff;transform:scale(1.05)}100%{background:'';color:'';transform:scale(1)}}
     .stat-recorded{animation:statPulse .55s ease forwards;}
-    #statBanner{position:fixed;top:0;left:0;right:0;z-index:9998;background:#16a34a;color:#fff;font-size:15px;font-weight:900;text-align:center;padding:10px 16px;pointer-events:none;transform:translateY(-100%);transition:transform .18s ease;letter-spacing:.02em;}
+    #statBanner{position:fixed;top:0;left:0;right:0;z-index:9998;background:#16a34a;color:#fff;font-size:15px;font-weight:900;text-align:center;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 10px;pointer-events:none;transform:translateY(-100%);transition:transform .18s ease;letter-spacing:.02em;}
     #statBanner.visible{transform:translateY(0);}
     #statBanner.error-banner{background:#dc2626;}
 
@@ -441,7 +471,7 @@
   <div id="syncBar">
     <span id="syncStatus">↑ Connecting…</span>
     <div style="display:flex;gap:8px;align-items:center;">
-      <span id="userEmailDisplay" style="font-size:11px;color:rgba(255,255,255,.5);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+      <span id="userEmailDisplay" style="font-size:11px;color:rgba(255,255,255,.8);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
       <button class="sync-settings-btn" onclick="document.getElementById('syncDevicePanel').classList.toggle('hidden')">Sync Settings</button>
     </div>
   </div>
@@ -490,7 +520,7 @@
         <button onclick="window._vsLoadSessionList && window._vsLoadSessionList()" style="background:transparent;border:1px solid rgba(255,255,255,.25);color:#93c5fd;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;">&#8635; Load</button>
       </div>
       <div id="manageSessionsList" style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;">
-        <div style="color:rgba(255,255,255,.4);font-size:10px;">Tap Load to see your sessions and archives.</div>
+        <div style="color:rgba(255,255,255,.75);font-size:11px;">Tap Load to see your sessions and archives.</div>
       </div>
     </div>
     <!-- Admin panel — only shown for alan.pollock@gmail.com -->
@@ -584,7 +614,7 @@
         </div>
       </div>
       <div class="score-center" style="display:flex;flex-direction:column;align-items:center;gap:5px;">
-        <div id="scoreSetLabel" style="font-size:10px;color:rgba(255,255,255,.4);letter-spacing:.03em;">Day 1 · Match 1 · Set 1</div>
+        <div id="scoreSetLabel" style="font-size:11px;color:rgba(255,255,255,.8);letter-spacing:.03em;">Day 1 · Match 1 · Set 1</div>
         <div style="display:flex;align-items:center;gap:6px;">
           <button id="scorePossessionPill" title="Tap to toggle serving/receiving" style="font-size:11px;font-weight:900;color:#fff;border:none;border-radius:20px;padding:3px 10px;cursor:pointer;background:rgba(22,163,74,.6);touch-action:manipulation;">🟢 Serving</button>
           <button id="scoreRotationBtn" style="display:none;font-size:11px;font-weight:900;color:#fff;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:20px;padding:3px 10px;cursor:pointer;touch-action:manipulation;">🔄 Rot 1</button>
@@ -613,9 +643,9 @@
       <span id="stripServer" style="font-size:11px;color:rgba(255,255,255,.7);font-weight:700;">Server: —</span>
       <span id="stripRotNum" style="font-size:11px;color:rgba(255,255,255,.45);font-weight:700;display:none;"></span>
     </div>
-    <div style="display:flex;gap:6px;">
-      <button id="sideOutBtn" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:900;cursor:pointer;" title="We won the rally — opponent error, block, etc.">SIDE OUT</button>
-      <button id="oppScoreBtn" style="background:#dc2626;color:#fff;border:none;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:900;cursor:pointer;" title="Opponent scored — their ace, kill, etc.">OPP SCORE</button>
+    <div style="display:flex;gap:10px;">
+      <button id="sideOutBtn" class="rally-btn rally-btn-ours" title="We won the rally — opponent error, block, etc.">SIDE OUT</button>
+      <button id="oppScoreBtn" class="rally-btn rally-btn-theirs" title="Opponent scored — their ace, kill, etc.">OPP SCORE</button>
     </div>
   </div>
   <!-- ══ UNIFIED COURT + BENCH (always visible when roster loaded) ══ -->
@@ -839,7 +869,7 @@
           <input id="exportName" class="bc-input" placeholder="Save export as…" />
           <button id="exportBtn" type="button" class="bc-btn primary">Export CSV</button>
           <button id="rotationBtn" type="button" class="bc-btn" style="display:none">Rotation</button>
-          <button id="resetBtn" type="button" class="bc-btn danger">Reset</button>
+          <button id="resetBtn" type="button" class="bc-btn danger" style="margin-left:var(--tap-separation);">Reset</button>
         </div>
       </div>
 
