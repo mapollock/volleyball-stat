@@ -1580,9 +1580,14 @@ function compactStateForStorage(st){
   return st;
 }
 
-function saveState(){
+// opts.touch === false persists without advancing clientUpdatedAt. Only real user
+// edits may advance it: the timestamp is what firebaseLoad() compares against the
+// cloud copy, so a device that bumps it just by opening the app looks newer than
+// the cloud and overwrites a match it never recorded.
+function saveState(opts){
+  var touch = !(opts && opts.touch === false);
   compactStateForStorage(state);
-  lastLocalUpdatedAt = Date.now();
+  if (touch) lastLocalUpdatedAt = Date.now();
   var diskState = Object.assign({}, state, { scoreStore: scoreStore, clientUpdatedAt: lastLocalUpdatedAt });
   localStorage.setItem(STORAGE_KEY, JSON.stringify(diskState));
   saveScoreStoreToDisk(scoreStore);
@@ -1591,7 +1596,7 @@ function saveState(){
 
 var state = loadState();
 normalizeAllTeams(state);
-saveState();
+saveState({ touch: false });
 
 // Firebase sync bootstraps asynchronously after DOMContentLoaded
 // window._firebaseSave and window._firebaseLoaded are set by the module
@@ -6690,40 +6695,7 @@ document.addEventListener('DOMContentLoaded', function(){
       await createAndCopyShare({ type:'player', playerId:player.id, playerName:player.name, scope:s2.scope, day:s2.day, match:s2.match, set:s2.set, teamName: team2.name||'' });
     };
 
-    // Revoke/copy share — called from dynamically created buttons
-    window._vsMigrateSession = async function() {
-      var input = byId('switchDeviceInput');
-      if (!input || !input.value.trim()) {
-        await vsConfirm('Paste an old Device ID in the field first, then click Migrate.');
-        return;
-      }
-      var id = input.value.trim();
-      if (!await vsConfirm('Migrate old session <strong>' + id.substring(0,16) + '...</strong> into your account?<br><br>This copies the old data to your account and registers it in the session list.')) return;
-      var btn = document.querySelector('[onclick="window._vsMigrateSession()"]');
-      if (btn) { btn.textContent = 'Migrating...'; btn.disabled = true; }
-      try {
-        var migrated = await fb.migrateOldSession(id);
-        if (!migrated) {
-          await vsConfirm('No data found for that Device ID. Check the ID and try again.');
-          if (btn) { btn.textContent = 'Migrate'; btn.disabled = false; }
-          return;
-        }
-        state = migrated;
-        normalizeAllTeams(state);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        initTeamSelect(); initMatchSelect(); applyModeToUI();
-        syncExportNameDefault(); renderTable();
-        updateOnboardingAndControls(); renderUnifiedCourt(); renderScore();
-        input.value = '';
-        var panel = byId('syncDevicePanel');
-        if (panel) panel.classList.add('hidden');
-        if (btn) { btn.textContent = 'Migrate'; btn.disabled = false; }
-      } catch(e) {
-        await vsConfirm('Migration error: ' + e.message);
-        if (btn) { btn.textContent = 'Migrate'; btn.disabled = false; }
-      }
-    };
-
+    // Share helpers — called from dynamically created buttons
     window._vsCopyShare = function(url, btn) {
       copyToClipboard(url).then(function() {
         btn.textContent = 'Copied!';
@@ -6731,11 +6703,23 @@ document.addEventListener('DOMContentLoaded', function(){
       });
     };
 
+    window._vsRevokeShare = async function(token) {
+      if (!await vsConfirm('Revoke this share link?<br><br>Anyone who already opened it will lose access to your stats.')) return;
+      var btn = document.querySelector('[onclick="window._vsRevokeShare(\'' + token + '\')"]');
+      if (btn) { btn.textContent = 'Revoking...'; btn.disabled = true; }
+      try {
+        await fb.revokeShare(token);
+        await renderActiveShares();
+      } catch(e) {
+        if (btn) { btn.textContent = 'Revoke'; btn.disabled = false; }
+        await vsConfirm('Could not revoke share: ' + e.message);
+      }
+    };
+
     // Initial session label — after _vs functions are defined
     loadSessionList();
 
-    // ── QR Code: Show my ID as QR ────────────────────────────────────────────
-    var showQrBtn = byId('showQrBtn');      }); // end onAuthReady
+    }); // end onAuthReady
 
     // ── Login overlay button wiring ───────────────────────────────────────────
     function showLoginError(msg) {
