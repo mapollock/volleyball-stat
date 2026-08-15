@@ -1,16 +1,13 @@
 /**
- * VolleyStat v0.1.58 (full build)
- * - Restores Teams / Roster / Undo / Export / Reset functionality
- * - Export respects the View dropdown scope (Set / Match / Tournament)
- * - Reset uses a styled modal: clears ALL stats for CURRENT team only, preserves team+roster,
- *   resets rotation offset (keeps assignments) and reminds user to export first.
- * - Keeps v0.1.7.3 rotation picker stacking fix
- * - v0.1.58: Rotation now triggers correctly on side-out (regaining serve).
- *   Added hasBall possession tracking. Rotation wheel shows live serve status.
- *   Manual +our score also triggers rotation when we didn't have the ball.
+ * VolleyStat — courtside volleyball stat tracking PWA.
+ *
+ * APP_VERSION below is the source of truth for the running version. Everything
+ * that can derive from it at runtime does; the few places that must hard-code it
+ * (the bootstrap script tag, the service worker cache name) are stamped by
+ * ./bump-version.sh. Do not edit those by hand.
  */
 
-var APP_VERSION = '0.1.179';
+var APP_VERSION = '0.1.180';
 console.log('[VolleyStat] v' + APP_VERSION + ' loaded');
 
 var STORAGE_KEY = 'volleystat_v1'; // stable key — do not change between versions
@@ -7129,7 +7126,7 @@ document.addEventListener('DOMContentLoaded', function(){
 // ── PWA: Service Worker registration ────────────────────────────────────────
 if ('serviceWorker' in navigator){
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('./sw.js?v=45', { updateViaCache: 'none' }).then(function(reg){
+    navigator.serviceWorker.register('./sw.js?v=' + APP_VERSION, { updateViaCache: 'none' }).then(function(reg){
       reg.update();
       console.log('[VolleyStat] SW registered:', reg.scope);
     }).catch(function(err){
