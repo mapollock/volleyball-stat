@@ -315,8 +315,13 @@ export async function listSessions() {
 }
 
 // ── Sharing ───────────────────────────────────────────────────────────────────
+// A share token is a bearer credential — anyone holding it can claim read access,
+// so it must not be guessable. Math.random() is not a CSPRNG and its output here
+// was short enough to be worth probing.
 function generateToken() {
-  return Math.random().toString(36).slice(2,8) + Math.random().toString(36).slice(2,8);
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 }
 
 export async function createShare(opts) {
@@ -362,7 +367,23 @@ export async function listShares() {
 }
 
 export async function revokeShare(token) {
-  await deleteDoc(doc(db, 'shares', token));
+  if (!currentUser) throw new Error('Not authenticated');
+  const shareRef = doc(db, 'shares', token);
+  const shareSnap = await getDoc(shareRef);
+  const coachUserId = shareSnap.exists() ? shareSnap.data().userId : currentUser.uid;
+  await deleteDoc(shareRef);
+
+  // Deleting the share document alone does not remove access. Claiming a share
+  // writes a data_access grant that keeps authorizing reads on its own, so
+  // without this the Revoke button reports success while the recipient retains
+  // permanent access to the coach's stats.
+  if (coachUserId !== currentUser.uid) return;
+  const grants = await getDocs(query(
+    collection(db, 'data_access'),
+    where('coachUserId', '==', coachUserId)
+  ));
+  const fromThisShare = grants.docs.filter(d => (d.data() || {}).shareToken === token);
+  await Promise.all(fromThisShare.map(d => deleteDoc(d.ref)));
 }
 
 
